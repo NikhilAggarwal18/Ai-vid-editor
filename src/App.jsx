@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import InteractiveRobot from './components/InteractiveRobot';
 
-const BACKEND_URL = 'http://localhost:8000';
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
 
 function App() {
   const [view, setView] = useState('landing'); // default to landing page view
