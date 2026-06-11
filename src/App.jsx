@@ -118,6 +118,44 @@ function App() {
   const [renderedClips, setRenderedClips] = useState([]);
   const [selectedRenderedClips, setSelectedRenderedClips] = useState([]);
 
+  // Time tracking for dynamic captions
+  const [playerTime, setPlayerTime] = useState(0);
+
+  useEffect(() => {
+    setPlayerTime(0);
+    if (!activeClip) return;
+    
+    const duration = (activeClip.end_time - activeClip.start_time) || 30;
+    const interval = setInterval(() => {
+      setPlayerTime((prev) => {
+        const next = prev + 0.25;
+        return next >= duration ? 0 : next;
+      });
+    }, 250);
+    
+    return () => clearInterval(interval);
+  }, [activeClip]);
+
+  const getDynamicCaption = () => {
+    if (!activeClip || !activeClip.transcript) return "VIRAL HIGHLIGHT";
+    const words = activeClip.transcript.split(/\s+/).filter(Boolean);
+    if (words.length === 0) return "VIRAL HIGHLIGHT";
+    
+    // Group into chunks of 3 words
+    const chunkSize = 3;
+    const chunks = [];
+    for (let i = 0; i < words.length; i += chunkSize) {
+      chunks.push(words.slice(i, i + chunkSize).join(" "));
+    }
+    
+    const duration = (activeClip.end_time - activeClip.start_time) || 30;
+    const chunkDuration = duration / chunks.length;
+    
+    const index = Math.floor(playerTime / chunkDuration);
+    const activeChunk = chunks[Math.min(index, chunks.length - 1)] || chunks[0];
+    return activeChunk;
+  };
+
   // Fetch initial data (music catalog, projects list)
   useEffect(() => {
     fetchMusicCatalog();
@@ -2053,7 +2091,7 @@ function App() {
                               boxShadow: '0 0 10px rgba(0,0,0,0.8)',
                               textShadow: '2px 2px 0px #000'
                             }}>
-                              NEON RETENTION HACK
+                              {getDynamicCaption().toUpperCase()}
                             </span>
                           </div>
 
@@ -2334,7 +2372,7 @@ function App() {
                               padding: '4px 10px',
                               borderRadius: '6px'
                             }}>
-                              {activeClip?.transcript ? (activeClip.transcript.length > 50 ? activeClip.transcript.substring(0, 50) + "..." : activeClip.transcript) : "VIRAL HIGHLIGHT"}
+                              {getDynamicCaption().toUpperCase()}
                             </span>
                           </div>
                         </div>
