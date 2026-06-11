@@ -173,8 +173,5 @@ async def check_on_load():
     if not await test_turso_connection():
         _USE_FALLBACK = True
 
-# Run check
-asyncio.run(check_on_load())
-
 if __name__ == "__main__":
     asyncio.run(init_db())

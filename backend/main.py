@@ -24,6 +24,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.on_event("startup")
+async def startup_event():
+    print("FastAPI startup: checking and initializing database...")
+    await db.init_db()
+
 # Ensure output directory exists and mount it to serve static files (rendered video files)
 OUTPUT_DIR = Path("./output")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
