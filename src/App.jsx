@@ -12,6 +12,36 @@ function App() {
   const [view, setView] = useState('studio'); // default to studio view dashboard
   const [studioTab, setStudioTab] = useState('projects'); // default to projects tab
   
+  const getFallbackVideoUrl = (start = 0, end = 60) => {
+    const extractYtId = (url) => {
+      if (!url) return null;
+      const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+      const match = url.match(regExp);
+      return (match && match[2].length === 11) ? match[2] : null;
+    };
+
+    if (videoFeeds && videoFeeds.length > 0) {
+      const ytFeed = videoFeeds.find(f => f.type === 'youtube' || f.source?.includes('youtube.com') || f.source?.includes('youtu.be'));
+      if (ytFeed) {
+        const ytId = extractYtId(ytFeed.source);
+        if (ytId) return `https://www.youtube.com/embed/${ytId}?start=${parseInt(start)}&end=${parseInt(end)}&autoplay=1`;
+      }
+    }
+    
+    const newProjYtId = extractYtId(newProjLink);
+    if (newProjYtId) return `https://www.youtube.com/embed/${newProjYtId}?start=${parseInt(start)}&end=${parseInt(end)}&autoplay=1`;
+
+    if (wizardMultiFeeds && wizardMultiFeeds.length > 0) {
+      const ytFeed = wizardMultiFeeds.find(f => f.type === 'youtube' || f.link?.includes('youtube.com') || f.link?.includes('youtu.be'));
+      if (ytFeed) {
+        const ytId = extractYtId(ytFeed.link);
+        if (ytId) return `https://www.youtube.com/embed/${ytId}?start=${parseInt(start)}&end=${parseInt(end)}&autoplay=1`;
+      }
+    }
+    return "https://www.w3schools.com/html/mov_bbb.mp4";
+  };
+
+  
   // Wizard States
   const [wizardStep, setWizardStep] = useState(1);
   const [wizardPipeline, setWizardPipeline] = useState('A');
@@ -466,7 +496,7 @@ function App() {
       // Render clips so they are completed and playable
       const renderedList = [];
       for (const clip of clips) {
-        let servedUrl = "https://www.w3schools.com/html/mov_bbb.mp4";
+        let servedUrl = getFallbackVideoUrl(clip.start_time, clip.end_time);
         try {
           const renderRes = await fetch(`${BACKEND_URL}/api/render-clip`, {
             method: 'POST',
@@ -604,7 +634,7 @@ function App() {
           end_time: 60.0,
           hook_score: 95,
           transcript: "Synced multi-camera master compilation video.",
-          video_url: "https://www.w3schools.com/html/mov_bbb.mp4",
+          video_url: getFallbackVideoUrl(0, 60),
           status: 'completed'
         };
         setGeneratedClips([fallbackClip]);
@@ -876,7 +906,7 @@ function App() {
         showNotification(`Successfully generated ${clips.length} clips! Rendering them now...`, "info");
         const renderedList = [];
         for (const clip of clips) {
-          let servedUrl = "https://www.w3schools.com/html/mov_bbb.mp4";
+          let servedUrl = getFallbackVideoUrl(clip.start_time, clip.end_time);
           try {
             const renderRes = await fetch(`${BACKEND_URL}/api/render-clip`, {
               method: 'POST',
@@ -996,7 +1026,7 @@ function App() {
     } catch {
       // Mock Fallback render
       setTimeout(() => {
-        const mockUrl = "https://www.w3schools.com/html/mov_bbb.mp4";
+        const mockUrl = getFallbackVideoUrl(activeClip.start_time, activeClip.end_time);
         const updatedClips = generatedClips.map(c => 
           c.id === activeClip.id ? { ...c, status: 'completed', video_url: mockUrl } : c
         );
@@ -1034,7 +1064,7 @@ function App() {
         continue;
       }
       
-      let servedUrl = "https://www.w3schools.com/html/mov_bbb.mp4";
+      let servedUrl = getFallbackVideoUrl(clip.start_time, clip.end_time);
       try {
         const res = await fetch(`${BACKEND_URL}/api/render-clip`, {
           method: 'POST',
@@ -2242,19 +2272,30 @@ function App() {
 
                           {/* Video Player */}
                           {activeClip?.video_url ? (
-                            <video 
-                              key={activeClip.id}
-                              src={activeClip.video_url} 
-                              controls 
-                              autoPlay
-                              loop
-                              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                            />
+                            activeClip.video_url.includes('youtube.com/embed/') ? (
+                              <iframe
+                                key={activeClip.id}
+                                src={activeClip.video_url}
+                                style={{ width: '100%', height: '100%', border: 'none' }}
+                                allow="autoplay; encrypted-media"
+                                allowFullScreen
+                              />
+                            ) : (
+                              <video 
+                                key={activeClip.id}
+                                src={activeClip.video_url} 
+                                controls 
+                                autoPlay
+                                loop
+                                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                              />
+                            )
                           ) : (
                             <div style={{ color: 'var(--text-muted)', fontSize: '0.9rem', textAlign: 'center', padding: '20px' }}>
                               Video is rendering...
                             </div>
                           )}
+
 
                           {/* Dynamic Caption Overlay */}
                           <div style={{
@@ -2498,11 +2539,21 @@ function App() {
                           <div key={clip.id} className="glass-panel" style={{ overflow: 'hidden', display: 'flex', flexDirection: 'column', border: selectedRenderedClips.includes(clip.id) ? '1px solid var(--accent-cyan)' : '1px solid var(--border-light)' }}>
                             <div style={{ position: 'relative', width: '100%', height: '320px', backgroundColor: '#000' }}>
                               {/* Standard Video Player */}
-                              <video 
-                                src={clip.url} 
-                                controls 
-                                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                              />
+                              {clip.url && clip.url.includes('youtube.com/embed/') ? (
+                                <iframe
+                                  src={clip.url}
+                                  style={{ width: '100%', height: '100%', border: 'none' }}
+                                  allow="autoplay; encrypted-media"
+                                  allowFullScreen
+                                />
+                              ) : (
+                                <video 
+                                  src={clip.url} 
+                                  controls 
+                                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                />
+                              )}
+
                               {/* Selection Checkbox */}
                               <div 
                                 onClick={(e) => {

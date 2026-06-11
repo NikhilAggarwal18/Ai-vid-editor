@@ -1,6 +1,6 @@
 import os
 import json
-from mistralai import Mistral
+from mistralai.client import Mistral
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -208,6 +208,85 @@ def find_viral_segments(longform_transcript: str, target_channel_style: dict = N
             }
         ]
         return fallback[:limit]
+
+def generate_viral_segments_from_metadata(video_title: str, video_description: str = "", limit: int = 3, target_channel_style: dict = None):
+    """
+    Synthesizes a plausible transcript and segments for a video based on its title and description,
+    ensuring each video gets unique, topic-relevant clips.
+    """
+    style_info = ""
+    if target_channel_style:
+        style_info = f"Mimic the style of this target channel: {json.dumps(target_channel_style)}"
+
+    prompt = f"""
+    You are an expert short-form content producer.
+    A user has uploaded a video with the following metadata:
+    Title: {video_title}
+    Description: {video_description}
+    
+    {style_info}
+    
+    Please simulate/synthesize a highly engaging transcript of about 150-250 words that matches the topic of this video.
+    Then, segment this synthesized transcript into exactly {limit} viral short-form clips (under 60 seconds each).
+    
+    Return the response as a JSON array of objects. Each object must have:
+    - title: engaging title for the short.
+    - start_time: start time in seconds (relative to the simulated video timeline, e.g., 0.0, 30.0).
+    - end_time: end time in seconds.
+    - hook_score: rating from 1 to 100 on how strong the opening hook is.
+    - transcript: the simulated transcript text for this clip segment.
+    - editing_notes: visual suggestion/directives for B-rolls and zooms.
+    
+    Return ONLY a valid JSON array. Do not include markdown code block tags.
+    """
+    
+    try:
+        client = get_mistral_client()
+        response = client.chat.complete(
+            model="mistral-large-latest",
+            messages=[
+                {"role": "user", "content": prompt}
+            ]
+        )
+        content = response.choices[0].message.content.strip()
+        if content.startswith("```json"):
+            content = content[7:]
+        if content.endswith("```"):
+            content = content[:-3]
+        content = content.strip()
+        return json.loads(content)[:limit]
+    except Exception as e:
+        print(f"Mistral API dynamic generation fallback activated: {e}")
+        # Generate custom fallback based on the actual video title
+        clean_title = video_title if video_title else "Awesome Video"
+        fallback = [
+            {
+                "title": f"The Hook: {clean_title}",
+                "start_time": 5.0,
+                "end_time": 25.0,
+                "hook_score": 94,
+                "transcript": f"Have you ever wondered about {clean_title}? Today, we are breaking down exactly what makes this so revolutionary. Most people miss the first step!",
+                "editing_notes": "Zoom in. Overlay neon yellow key terms."
+            },
+            {
+                "title": f"The Secret of {clean_title}",
+                "start_time": 30.0,
+                "end_time": 55.0,
+                "hook_score": 89,
+                "transcript": f"Here is the golden rule for {clean_title}. Instead of doing what everyone else does, you focus on the core leverage point. That increases success by 40%!",
+                "editing_notes": "Apply pop animations to subtitles. Cut to a close-up visual."
+            },
+            {
+                "title": f"Next Level {clean_title}",
+                "start_time": 60.0,
+                "end_time": 85.0,
+                "hook_score": 85,
+                "transcript": f"If you want to master {clean_title}, you have to start applying this strategy today. Let me know in the comments if you have tried this before!",
+                "editing_notes": "Zoom out. Display channel subscription reminder."
+            }
+        ]
+        return fallback[:limit]
+
 
 if __name__ == "__main__":
     print("Testing Mistral AI module...")
