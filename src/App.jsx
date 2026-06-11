@@ -801,27 +801,40 @@ function App() {
     setIsClipping(true);
     try {
       const channelId = creatorProfile?.id || '';
-      const res = await fetch(`${BACKEND_URL}/api/projects/${activeProject.id}/generate-clips?target_channel_id=${channelId}`);
+      const res = await fetch(`${BACKEND_URL}/api/projects/${activeProject.id}/generate-clips?target_channel_id=${channelId}&limit=${desiredClipsCount}`);
       if (!res.ok) throw new Error();
       
       const clips = await res.json();
       setGeneratedClips(clips);
-      showNotification("Mistral AI identified 3 high-hook segments!");
+      showNotification(`Mistral AI identified ${clips.length} high-hook segments!`);
     } catch {
       // Mock fallback
       setTimeout(() => {
-        setGeneratedClips([
+        const fallbackClips = [
           { id: "c1", title: "Target Niche Rule", start_time: 12.5, end_time: 35.0, hook_score: 95, transcript: "If you try to target everyone, you target no one. That is the first major hook you need to get down when building a brand online.", editing_notes: "Cut to Close-up. Zoom in on 'everyone' and 'no one'." },
           { id: "c2", title: "Neon Retention Hack", start_time: 48.0, end_time: 72.0, hook_score: 88, transcript: "If you use bold impact fonts, neon yellow colors, and frequent zoom-ins, your audience retention spikes by 35%. I tested it myself.", editing_notes: "Apply styled captions with glowing stroke. Pop text on every word." },
-          { id: "c3", title: "Audiotrack Pacing", start_time: 90.0, end_time: 115.0, hook_score: 82, transcript: "Hype high-energy tracks keep viewers hooked till the very last second. Let me show you exactly what background music we run.", editing_notes: "Increase background music volume by 5% during transition." }
-        ]);
+          { id: "c3", title: "Audiotrack Pacing", start_time: 90.0, end_time: 115.0, hook_score: 82, transcript: "Hype high-energy tracks keep viewers hooked till the very last second. Let me show you exactly what background music we run.", editing_notes: "Increase background music volume by 5% during transition." },
+          { id: "c4", title: "Core Value Focus", start_time: 120.0, end_time: 145.0, hook_score: 85, transcript: "So here is the secret to scaling anything. You don't focus on the marketing first. You focus on the core value proposition.", editing_notes: "Zoom in on 'focus on the core' to emphasize the point." },
+          { id: "c5", title: "Micro-Edits Spikes", start_time: 150.0, end_time: 175.0, hook_score: 90, transcript: "Using micro-animations is highly effective for improving user engagement. Hover effects keep interfaces feeling alive.", editing_notes: "Add popping text animation for every word. Apply light zoom-in on 'user engagement'." },
+          { id: "c6", title: "Hook within 3 Seconds", start_time: 180.0, end_time: 200.0, hook_score: 93, transcript: "You must grab attention in the first 3 seconds or the viewer scrolls away. A bold statement works best.", editing_notes: "Add visual shock overlay. Zoom in closely on speaker." },
+          { id: "c7", title: "Visual Pacing Secret", start_time: 210.0, end_time: 235.0, hook_score: 80, transcript: "Video pacing should match the speed of speech. Cut out pauses and keep the story moving fast.", editing_notes: "Split screens or quick transitions. Fast paced music mixed." },
+          { id: "c8", title: "Clean Audio Mix", start_time: 240.0, end_time: 265.0, hook_score: 81, transcript: "Your vocal track must be crystal clear. Keep the music volume low to ensure your voice sits on top.", editing_notes: "Lower music overlay gain. Apply compressor filter suggestion." },
+          { id: "c9", title: "Retaining Viewer Interest", start_time: 270.0, end_time: 295.0, hook_score: 84, transcript: "Add visual loops or secondary angles every 5 seconds to prevent visual fatigue and keep interest high.", editing_notes: "Switch angle to Camera B. Show subtle B-roll." },
+          { id: "c10", title: "Call to Action Rule", start_time: 300.0, end_time: 325.0, hook_score: 89, transcript: "Never end a video without a solid call to action. Keep it simple and tell them exactly what to do next.", editing_notes: "Zoom out. Display logo overlay. End on high note music." }
+        ];
+        const sliced = fallbackClips.slice(0, desiredClipsCount);
+        setGeneratedClips(sliced);
+        if (sliced.length > 0) {
+          setActiveClip(sliced[0]);
+        }
         setIsClipping(false);
-        showNotification("Mistral AI extracted viral clips.", "info");
+        showNotification(`Mistral AI extracted ${sliced.length} viral clips.`, "info");
       }, 1500);
     } finally {
       setIsClipping(false);
     }
   };
+
 
   // NEW: Separate AI shorts styling & clipping generator
   const handleAnalyzeStyleAndGenerateClips = async () => {

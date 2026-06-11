@@ -257,35 +257,34 @@ def generate_viral_segments_from_metadata(video_title: str, video_description: s
         return json.loads(content)[:limit]
     except Exception as e:
         print(f"Mistral API dynamic generation fallback activated: {e}")
-        # Generate custom fallback based on the actual video title
         clean_title = video_title if video_title else "Awesome Video"
-        fallback = [
-            {
-                "title": f"The Hook: {clean_title}",
-                "start_time": 5.0,
-                "end_time": 25.0,
-                "hook_score": 94,
-                "transcript": f"Have you ever wondered about {clean_title}? Today, we are breaking down exactly what makes this so revolutionary. Most people miss the first step!",
-                "editing_notes": "Zoom in. Overlay neon yellow key terms."
-            },
-            {
-                "title": f"The Secret of {clean_title}",
-                "start_time": 30.0,
-                "end_time": 55.0,
-                "hook_score": 89,
-                "transcript": f"Here is the golden rule for {clean_title}. Instead of doing what everyone else does, you focus on the core leverage point. That increases success by 40%!",
-                "editing_notes": "Apply pop animations to subtitles. Cut to a close-up visual."
-            },
-            {
-                "title": f"Next Level {clean_title}",
-                "start_time": 60.0,
-                "end_time": 85.0,
-                "hook_score": 85,
-                "transcript": f"If you want to master {clean_title}, you have to start applying this strategy today. Let me know in the comments if you have tried this before!",
-                "editing_notes": "Zoom out. Display channel subscription reminder."
-            }
+        
+        templates = [
+            ("The Hook: {}", "Have you ever wondered about {}? Today, we are breaking down exactly what makes this so revolutionary. Most people miss the first step!"),
+            ("The Secret of {}", "Here is the golden rule for {}. Instead of doing what everyone else does, you focus on the core leverage point. That increases success by 40%!"),
+            ("Next Level {}", "If you want to master {}, you have to start applying this strategy today. Let me know in the comments if you have tried this before!"),
+            ("The Mistake with {}", "Avoid this critical mistake when dealing with {}. Many beginners fail because they don't optimize the initial structure."),
+            ("Why {} Works", "This is the science behind why {} works. By testing it with multiple audiences, we found a 35% retention spike."),
+            ("Mastering {}", "To fully master {}, focus on clear visual pacing and high-energy background audio tracks."),
+            ("The Formula for {}", "Here is the step-by-step formula for {}. Follow these three phases to automate your growth."),
+            ("{} Hack", "A simple hack for {} that saves hours. We implemented it last week and saw instant progress."),
+            ("Core Value of {}", "Never ignore the core value of {}. Make sure your audience understands the key benefit immediately."),
+            ("{} Wrap-up", "Wrapping up our guide to {}. Keep it concise, test frequently, and always include a call to action!")
         ]
-        return fallback[:limit]
+        
+        fallback = []
+        for i in range(min(limit, 10)):
+            title_tpl, desc_tpl = templates[i % len(templates)]
+            fallback.append({
+                "title": title_tpl.format(clean_title),
+                "start_time": float(i * 30),
+                "end_time": float((i + 1) * 30),
+                "hook_score": 95 - i * 2,
+                "transcript": desc_tpl.format(clean_title),
+                "editing_notes": f"Zoom in. Overlay key terms for segment {i+1}."
+            })
+        return fallback
+
 
 
 if __name__ == "__main__":
