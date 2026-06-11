@@ -9,7 +9,7 @@ import InteractiveRobot from './components/InteractiveRobot';
 const BACKEND_URL = 'http://localhost:8000';
 
 function App() {
-  const [view, setView] = useState('studio'); // default to studio view dashboard
+  const [view, setView] = useState('landing'); // default to landing page view
   const [studioTab, setStudioTab] = useState('projects'); // default to projects tab
   
   const getFallbackVideoUrl = (start = 0, end = 60) => {
