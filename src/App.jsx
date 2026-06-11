@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   Sparkles, Video, Search, Music, Film, Layers, Play, Pause, 
   RotateCcw, Sliders, ChevronRight, CheckCircle2, AlertCircle, 
-  Settings, User, HelpCircle, Upload, Plus, Volume2, Link, Trash2
+  Settings, User, HelpCircle, Upload, Plus, Volume2, Link, Trash2,
+  Home
 } from 'lucide-react';
 import InteractiveRobot from './components/InteractiveRobot';
 
@@ -1249,10 +1250,22 @@ function App() {
           </div>
           
           <nav style={{ display: 'flex', gap: '30px', alignItems: 'center' }}>
-            <span style={{ color: 'var(--text-secondary)', cursor: 'pointer' }} onClick={() => setView('landing')}>Home</span>
-            <button className="neon-btn" style={{ padding: '8px 20px', fontSize: '0.85rem' }} onClick={() => setView('studio')}>
-              Launch App
-            </button>
+            <span 
+              style={{ color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', transition: 'color 0.2s' }} 
+              onClick={() => setView('landing')}
+              onMouseEnter={(e) => e.currentTarget.style.color = '#fff'}
+              onMouseLeave={(e) => e.currentTarget.style.color = 'var(--text-secondary)'}
+            >
+              <Home size={16} /> Home
+            </span>
+            <span 
+              style={{ color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', transition: 'color 0.2s' }} 
+              onClick={() => setView('studio')}
+              onMouseEnter={(e) => e.currentTarget.style.color = '#fff'}
+              onMouseLeave={(e) => e.currentTarget.style.color = 'var(--text-secondary)'}
+            >
+              <Sliders size={16} /> Studio
+            </span>
           </nav>
         </div>
       </header>
