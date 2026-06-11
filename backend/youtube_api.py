@@ -198,6 +198,100 @@ def get_viral_shorts(uploads_playlist_id: str, limit: int = 5):
         }
     ][:limit]
 
+def extract_video_id(url: str) -> str:
+    """
+    Extracts the YouTube video ID from a URL.
+    """
+    import re
+    patterns = [
+        r"(?:v=|\/v\/|embed\/|youtu\.be\/|shorts\/|\/shorts)([^#\&\?]*)"
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, url)
+        if match:
+            candidate = match.group(1)
+            # Remove any trailing slash or query params if matched incorrectly
+            candidate = candidate.split('?')[0].split('&')[0].split('/')[0]
+            if len(candidate) == 11:
+                return candidate
+    return None
+
+def get_video_details(video_id: str):
+    """
+    Fetches video details (title and description) from YouTube API.
+    """
+    try:
+        service = get_youtube_service()
+        response = service.videos().list(
+            id=video_id,
+            part="snippet"
+        ).execute()
+        
+        items = response.get("items", [])
+        if items:
+            snippet = items[0]["snippet"]
+            return {
+                "title": snippet.get("title", ""),
+                "description": snippet.get("description", "")
+            }
+    except Exception as e:
+        print(f"YouTube API Error fetching video details (falling back to mock): {e}")
+        
+    # Mock fallback based on video_id
+    return {
+        "title": f"Viral Secrets of Video {video_id}",
+        "description": "In this video we reveal the top secrets to producing highly engaging short form content."
+    }
+
+def get_video_transcript(video_id: str) -> str:
+    """
+    Fetches real captions/transcripts from YouTube using youtube-transcript-api.
+    Returns the transcript as a single string, or None if unavailable.
+    """
+    from youtube_transcript_api import YouTubeTranscriptApi
+    try:
+        api = YouTubeTranscriptApi()
+        transcript_list = api.fetch(video_id)
+        text_segments = []
+        for item in transcript_list:
+            if hasattr(item, "text"):
+                text_segments.append(item.text)
+            elif isinstance(item, dict) and "text" in item:
+                text_segments.append(item["text"])
+            else:
+                try:
+                    text_segments.append(item["text"])
+                except Exception:
+                    pass
+        full_transcript = " ".join(text_segments)
+        return full_transcript
+    except Exception as e:
+        print(f"Failed to fetch YouTube transcript for video {video_id}: {e}")
+        return None
+
+
+def download_video(url: str, output_path: str) -> bool:
+    """
+    Downloads a YouTube video to the specified output_path using yt-dlp.
+    Returns True if successful, False otherwise.
+    """
+    import yt_dlp
+    try:
+        ydl_opts = {
+            'format': 'best[ext=mp4]/best',
+            'outtmpl': output_path,
+            'noplaylist': True,
+            'quiet': True,
+        }
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([url])
+        return True
+    except Exception as e:
+        print(f"Failed to download YouTube video using yt-dlp: {e}")
+        return False
+
+
+
 if __name__ == "__main__":
     # Test harness
     print("Testing YouTube API module...")

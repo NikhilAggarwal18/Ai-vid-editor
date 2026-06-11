@@ -247,14 +247,27 @@ async def upload_project_video(
 async def add_project_video_link(project_id: str, request: LinkVideoRequest):
     """
     Saves a YouTube or Google Drive URL link as a video feed for a project.
+    Downloads the YouTube video locally if possible.
     """
     video_id = str(uuid.uuid4())
+    youtube_id = youtube_api.extract_video_id(request.url)
+    
+    file_path = request.url
+    if youtube_id:
+        saved_filename = f"{project_id}_{youtube_id}.mp4"
+        saved_path = OUTPUT_DIR / saved_filename
+        # Download YouTube video
+        print(f"Downloading YouTube video {youtube_id} to {saved_path}")
+        success = youtube_api.download_video(request.url, str(saved_path))
+        if success and os.path.exists(saved_path):
+            file_path = str(saved_path)
+            
     client = db.get_client()
     try:
-        # Insert video record with link URL as file_path
+        # Insert video record with local file path or original URL
         await client.execute(
             "INSERT INTO project_videos (id, project_id, label, file_path, duration) VALUES (?, ?, ?, ?, ?)",
-            [video_id, project_id, request.label, request.url, 0]
+            [video_id, project_id, request.label, file_path, 0]
         )
     except Exception as e:
         await client.close()
@@ -262,7 +275,8 @@ async def add_project_video_link(project_id: str, request: LinkVideoRequest):
     finally:
         await client.close()
         
-    return {"id": video_id, "project_id": project_id, "label": request.label, "file_path": request.url}
+    return {"id": video_id, "project_id": project_id, "label": request.label, "file_path": file_path}
+
 
 @app.post("/api/projects/{project_id}/sync")
 async def sync_project_videos(project_id: str):
@@ -300,9 +314,24 @@ async def sync_project_videos(project_id: str):
                 is_mock = False
                 
         if is_mock:
-            served_url = "https://www.w3schools.com/html/mov_bbb.mp4"
+            youtube_id = None
+            for v in videos:
+                youtube_id = youtube_api.extract_video_id(v)
+                if not youtube_id:
+                    import re
+                    match = re.search(r'_([a-zA-Z0-9_-]{11})\.[a-zA-Z0-9]+$', v)
+                    if match:
+                        youtube_id = match.group(1)
+                if youtube_id:
+                    break
+            
+            if youtube_id:
+                served_url = f"https://www.youtube.com/embed/{youtube_id}?autoplay=1"
+            else:
+                served_url = "https://www.w3schools.com/html/mov_bbb.mp4"
         else:
             served_url = f"{HOST_URL}/static/{synced_filename}"
+
             
         # Insert a synced clip record so it is retrieved in GET /clips
         try:
@@ -337,7 +366,7 @@ async def sync_project_videos(project_id: str):
 @app.get("/api/projects/{project_id}/generate-clips")
 async def generate_clips(project_id: str, target_channel_id: Optional[str] = None, limit: int = 3):
     """
-    Runs Mistral AI clipping algorithm on the project's synced video.
+    Runs Mistral AI clipping algorithm dynamically on the project's video metadata.
     Identifies engaging segments and adds them to the clips table.
     """
     client = db.get_client()
@@ -357,17 +386,72 @@ async def generate_clips(project_id: str, target_channel_id: Optional[str] = Non
                     "secondary_color": row[5]
                 }
         
-        # Mock long-form transcript for Mistral AI segmentation
-        long_transcript = """
-        Hello guys, welcome back to the channel. Today, we are discussing the ultimate secret to growing a brand online. 
-        In the first step, you must identify a niche. If you try to target everyone, you target no one. That is the first major hook.
-        Next, let's talk about styling. Most creators make their captions look boring. If you use bold impact fonts, neon yellow colors, 
-        and frequent zoom-ins, your audience retention spikes by 35%. I tested this on 5 different accounts and it works.
-        Lastly, sync your background audio. Hype high-energy tracks keep viewers hooked till the last second. Let me show you some examples.
-        """
+        # Fetch project details to make transcript topic-specific
+        project_res = await client.execute("SELECT title FROM projects WHERE id = ?", [project_id])
+        project_title = "My Viral Shorts"
+        if project_res.rows:
+            project_title = project_res.rows[0][0]
+            
+        # Get video feeds for project
+        videos_res = await client.execute(
+            "SELECT label, file_path FROM project_videos WHERE project_id = ? LIMIT 1",
+            [project_id]
+        )
         
-        # Call Mistral AI to segment video transcript
-        segments = mistral_api.find_viral_segments(long_transcript, style_preset, limit=limit)
+        video_title = project_title
+        video_description = f"Short video content for project: {project_title}."
+        segments = []
+        
+        if videos_res.rows:
+            label, file_path = videos_res.rows[0]
+            import re
+            youtube_id = youtube_api.extract_video_id(file_path)
+            if not youtube_id:
+                # check filename for video id (it has an underscore followed by 11 chars)
+                match = re.search(r'_([a-zA-Z0-9_-]{11})\.[a-zA-Z0-9]+$', file_path)
+                if match:
+                    youtube_id = match.group(1)
+            
+            if youtube_id:
+                details = youtube_api.get_video_details(youtube_id)
+                if details:
+                    video_title = details.get("title", project_title)
+                    video_description = details.get("description", "")
+                
+                # Fetch real transcript
+                real_transcript = youtube_api.get_video_transcript(youtube_id)
+                if real_transcript:
+                    print(f"Using real transcript from YouTube for video {youtube_id} (length={len(real_transcript)})")
+                    segments = mistral_api.find_viral_segments(real_transcript, style_preset, limit=limit)
+                else:
+                    print("Could not fetch real transcript, falling back to dynamic metadata generation.")
+                    
+            if not segments:
+                if not youtube_id:
+                    # If it's a file path, extract filename to make it a bit more specific
+                    file_name = file_path.split("/")[-1].split("\\")[-1]
+                    if file_name and len(file_name) > 3:
+                        # Clean extension
+                        if "." in file_name:
+                            file_name = ".".join(file_name.split(".")[:-1])
+                        video_title = f"{project_title} - {file_name}"
+                
+                # Call Mistral AI to segment video transcript dynamically
+                segments = mistral_api.generate_viral_segments_from_metadata(
+                    video_title=video_title,
+                    video_description=video_description,
+                    limit=limit,
+                    target_channel_style=style_preset
+                )
+        else:
+            # No video feeds, fall back to project title metadata
+            segments = mistral_api.generate_viral_segments_from_metadata(
+                video_title=video_title,
+                video_description=video_description,
+                limit=limit,
+                target_channel_style=style_preset
+            )
+
         
         generated_clips = []
         for seg in segments:
@@ -393,6 +477,7 @@ async def generate_clips(project_id: str, target_channel_id: Optional[str] = Non
             })
             
         return generated_clips
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Clips generation failed: {e}")
     finally:
@@ -430,6 +515,18 @@ async def get_project_clips(project_id: str):
     """
     client = db.get_client()
     try:
+        # Check if project has YouTube video feed
+        videos_res = await client.execute("SELECT file_path FROM project_videos WHERE project_id = ? LIMIT 1", [project_id])
+        youtube_id = None
+        if videos_res.rows:
+            file_path = videos_res.rows[0][0]
+            import re
+            youtube_id = youtube_api.extract_video_id(file_path)
+            if not youtube_id:
+                match = re.search(r'_([a-zA-Z0-9_-]{11})\.[a-zA-Z0-9]+$', file_path)
+                if match:
+                    youtube_id = match.group(1)
+
         res = await client.execute(
             "SELECT id, title, start_time, end_time, hook_score, transcript, video_url, status FROM clips WHERE project_id = ? ORDER BY created_at DESC",
             [project_id]
@@ -437,17 +534,22 @@ async def get_project_clips(project_id: str):
         clips = []
         for row in res.rows:
             video_url = row[6]
+            start_time = row[2]
+            end_time = row[3]
             if video_url and "/static/clip_" in video_url:
                 clip_id = row[0]
                 local_path = OUTPUT_DIR / f"clip_{clip_id}.mp4"
                 if os.path.exists(local_path):
                     if os.path.getsize(local_path) < 10000:
-                        video_url = "https://www.w3schools.com/html/mov_bbb.mp4"
+                        if youtube_id:
+                            video_url = f"https://www.youtube.com/embed/{youtube_id}?start={int(start_time)}&end={int(end_time)}&autoplay=1"
+                        else:
+                            video_url = "https://www.w3schools.com/html/mov_bbb.mp4"
             clips.append({
                 "id": row[0],
                 "title": row[1],
-                "start_time": row[2],
-                "end_time": row[3],
+                "start_time": start_time,
+                "end_time": end_time,
                 "hook_score": row[4],
                 "transcript": row[5],
                 "video_url": video_url,
@@ -456,6 +558,7 @@ async def get_project_clips(project_id: str):
         return clips
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch project clips: {e}")
+
 
 @app.delete("/api/clips/{clip_id}/render")
 async def delete_clip_render(clip_id: str):
@@ -606,9 +709,20 @@ async def render_clip(request: ClipRenderRequest):
         # Since we serve statically via /static mounting
         # If it's a mock JSON file, serve a playable sample video URL so the browser player doesn't show a blank screen!
         if is_mock:
-            served_url = "https://www.w3schools.com/html/mov_bbb.mp4"
+            import re
+            youtube_id = youtube_api.extract_video_id(base_video_path)
+            if not youtube_id:
+                match = re.search(r'_([a-zA-Z0-9_-]{11})\.[a-zA-Z0-9]+$', base_video_path)
+                if match:
+                    youtube_id = match.group(1)
+            
+            if youtube_id:
+                served_url = f"https://www.youtube.com/embed/{youtube_id}?start={int(start_time)}&end={int(end_time)}&autoplay=1"
+            else:
+                served_url = "https://www.w3schools.com/html/mov_bbb.mp4"
         else:
             served_url = f"{HOST_URL}/static/{output_filename}"
+
         
         # Update Database
         await client.execute(
