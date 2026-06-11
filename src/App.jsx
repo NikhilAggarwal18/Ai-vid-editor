@@ -1250,7 +1250,6 @@ function App() {
           
           <nav style={{ display: 'flex', gap: '30px', alignItems: 'center' }}>
             <span style={{ color: 'var(--text-secondary)', cursor: 'pointer' }} onClick={() => setView('landing')}>Home</span>
-            <span style={{ color: 'var(--text-secondary)', cursor: 'pointer' }} onClick={() => setView('studio')}>Studio</span>
             <button className="neon-btn" style={{ padding: '8px 20px', fontSize: '0.85rem' }} onClick={() => setView('studio')}>
               Launch App
             </button>
