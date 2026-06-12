@@ -155,44 +155,7 @@ function App() {
     checkSession();
   }, []);
 
-  // Initialize Google Sign-in button
-  useEffect(() => {
-    if (authMode === 'selection' && view === 'auth') {
-      const initGoogleBtn = () => {
-        /* global google */
-        if (typeof google !== 'undefined') {
-          try {
-            google.accounts.id.initialize({
-              client_id: "1079750944571-1llr1tqbluu1s04duil36e79fceefq6a.apps.googleusercontent.com",
-              callback: handleGoogleAuthCallback,
-              auto_select: false
-            });
-            
-            const btnEl = document.getElementById("google-signin-button");
-            if (btnEl) {
-              google.accounts.id.renderButton(
-                btnEl,
-                { 
-                  theme: "filled_blue", 
-                  size: "large", 
-                  shape: "rectangular", 
-                  width: 320, 
-                  text: "continue_with" 
-                }
-              );
-            }
-          } catch (err) {
-            console.error("Failed to initialize Google GSI:", err);
-          }
-        } else {
-          // Retry in 200ms if script is not fully loaded
-          setTimeout(initGoogleBtn, 200);
-        }
-      };
-      // Short delay to ensure container DOM element is rendered in page tree
-      setTimeout(initGoogleBtn, 100);
-    }
-  }, [authMode, view]);
+  // Google Sign-in initialization is defined below handleGoogleAuthCallback to prevent TDZ errors
 
   // Fetch initial data (music catalog, projects list)
   useEffect(() => {
@@ -454,6 +417,54 @@ function App() {
       sendGoogleTokenToBackend(response.credential);
     }
   };
+
+  // Initialize Google Sign-in button (placed here to avoid Temporal Dead Zone issues)
+  useEffect(() => {
+    if (authMode === 'selection' && view === 'auth') {
+      let active = true;
+      const initGoogleBtn = () => {
+        if (!active) return;
+        /* global google */
+        if (typeof google !== 'undefined') {
+          const btnEl = document.getElementById("google-signin-button");
+          if (btnEl) {
+            try {
+              google.accounts.id.initialize({
+                client_id: "1079750944571-1llr1tqbluu1s04duil36e79fceefq6a.apps.googleusercontent.com",
+                callback: handleGoogleAuthCallback,
+                auto_select: false
+              });
+              
+              google.accounts.id.renderButton(
+                btnEl,
+                { 
+                  theme: "filled_blue", 
+                  size: "large", 
+                  shape: "rectangular", 
+                  width: 320, 
+                  text: "continue_with" 
+                }
+              );
+            } catch (err) {
+              console.error("Failed to initialize Google GSI:", err);
+            }
+          } else {
+            // Container not rendered in DOM yet, retry in 100ms
+            setTimeout(initGoogleBtn, 100);
+          }
+        } else {
+          // Script not loaded yet, retry in 200ms
+          setTimeout(initGoogleBtn, 200);
+        }
+      };
+      // Short delay to ensure container DOM element is rendered in page tree
+      setTimeout(initGoogleBtn, 100);
+      
+      return () => {
+        active = false;
+      };
+    }
+  }, [authMode, view]);
 
   const handleLogout = async () => {
     try {
