@@ -1616,35 +1616,17 @@ function App() {
               }}
             ></div>
 
-            {/* Simulated Google Auth Button for development/fallback */}
             <button 
-              className="auth-social-btn"
-              onClick={() => setShowGoogleModal(true)}
-              style={{
-                fontSize: '0.85rem',
-                opacity: 0.8,
-                border: '1px dashed var(--border-light)',
-                padding: '8px 12px',
-                height: 'auto',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '8px'
-              }}
-            >
-              <img src="https://www.google.com/favicon.ico" alt="Google" style={{ width: '14px', height: '14px', opacity: 0.7 }} />
-              (Dev Tool) Simulate Google Auth
-            </button>
-            
-            <button 
-              className="auth-social-btn"
+              className="email-matching-btn"
               onClick={() => {
                 setAuthMode('email_entry');
                 setAuthError('');
               }}
             >
-              <Mail size={18} />
-              Continue with Email
+              <div className="email-matching-btn-icon-wrapper">
+                <Mail size={18} color="#1a73e8" />
+              </div>
+              <span className="email-matching-btn-text">Continue with Email</span>
             </button>
             
             <div className="auth-divider">or</div>
