@@ -56,18 +56,13 @@ async def signup_email_init(payload: EmailInitSchema):
         # Hash OTP (we can hash with bcrypt or a simple hash, let's use bcrypt hashing)
         otp_hash = auth_utils.hash_password(otp_val)
         
-        # Save verification record
-        verification_id = str(uuid.uuid4())
+        # Save verification record (using INSERT OR REPLACE since email is PRIMARY KEY)
         expires_at = datetime.datetime.utcnow() + datetime.timedelta(minutes=10)
         
-        # Delete any old OTP verifications for this email to keep table clean
-        await client.execute("DELETE FROM otp_verifications WHERE email = ?", [payload.email])
-        
-        # Insert new verification
         await client.execute(
-            """INSERT INTO otp_verifications (id, email, otp_code, expires_at) 
-               VALUES (?, ?, ?, ?)""",
-            [verification_id, payload.email, otp_hash, expires_at.isoformat()]
+            """INSERT OR REPLACE INTO otp_verifications (email, otp_code, expires_at) 
+               VALUES (?, ?, ?)""",
+            [payload.email, otp_hash, expires_at.isoformat()]
         )
         
         # Send OTP
@@ -87,7 +82,7 @@ async def signup_email_verify(payload: EmailVerifySchema):
     try:
         # Get latest verification record
         res = await client.execute(
-            "SELECT otp_code, expires_at FROM otp_verifications WHERE email = ? ORDER BY expires_at DESC LIMIT 1",
+            "SELECT otp_code, expires_at FROM otp_verifications WHERE email = ?",
             [payload.email]
         )
         if not res.rows:

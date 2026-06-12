@@ -79,13 +79,11 @@ async def init_db():
             # Create otp_verifications table
             await client.execute("""
                 CREATE TABLE IF NOT EXISTS otp_verifications (
-                    id TEXT PRIMARY KEY,
-                    email TEXT NOT NULL,
+                    email TEXT PRIMARY KEY,
                     otp_code TEXT NOT NULL,
                     expires_at DATETIME NOT NULL
                 )
             """)
-            await client.execute("CREATE INDEX IF NOT EXISTS idx_otp_email ON otp_verifications(email)")
 
             # Create channels table
             await client.execute("""

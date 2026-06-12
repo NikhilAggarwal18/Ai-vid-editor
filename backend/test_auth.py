@@ -85,7 +85,7 @@ async def fetch_test_otp():
     db_client = db.get_client()
     try:
         res = await db_client.execute(
-            "SELECT otp_code FROM otp_verifications WHERE email = ? ORDER BY expires_at DESC LIMIT 1",
+            "SELECT otp_code FROM otp_verifications WHERE email = ?",
             [TEST_EMAIL]
         )
         if res.rows:
@@ -124,8 +124,8 @@ def test_api_sign_up_and_sign_in_flow():
             otp_hash = auth_utils.hash_password("123456")
             expires_at = datetime.datetime.utcnow() + datetime.timedelta(minutes=10)
             await db_client.execute(
-                "INSERT OR REPLACE INTO otp_verifications (id, email, otp_code, expires_at) VALUES (?, ?, ?, ?)",
-                ["test_verify_id", TEST_EMAIL, otp_hash, expires_at.isoformat()]
+                "INSERT OR REPLACE INTO otp_verifications (email, otp_code, expires_at) VALUES (?, ?, ?)",
+                [TEST_EMAIL, otp_hash, expires_at.isoformat()]
             )
         finally:
             await db_client.close()
