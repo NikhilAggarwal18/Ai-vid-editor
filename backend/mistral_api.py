@@ -20,8 +20,6 @@ def analyze_short_style(transcript: str, title: str):
     Uses Mistral AI to analyze a viral Short's transcript and title,
     deducing hook patterns, pacing, caption recommendations, and B-roll suggestions.
     """
-    client = get_mistral_client()
-    
     prompt = f"""
     You are an expert short-form video strategist and video editor.
     Analyze the following transcript and title of a highly viral short-form video (YouTube Short / TikTok):
@@ -44,6 +42,7 @@ def analyze_short_style(transcript: str, title: str):
     """
     
     try:
+        client = get_mistral_client()
         response = client.chat.complete(
             model="mistral-large-latest",
             messages=[
@@ -80,8 +79,6 @@ def find_viral_segments(longform_transcript: str, target_channel_style: dict = N
     Scans a long-form video transcript and uses Mistral AI to isolate 
     high-engagement segments that would make great short-form videos.
     """
-    client = get_mistral_client()
-    
     style_info = ""
     if target_channel_style:
         style_info = f"Mimic the style of this target channel: {json.dumps(target_channel_style)}"
@@ -107,6 +104,7 @@ def find_viral_segments(longform_transcript: str, target_channel_style: dict = N
     """
     
     try:
+        client = get_mistral_client()
         response = client.chat.complete(
             model="mistral-large-latest",
             messages=[

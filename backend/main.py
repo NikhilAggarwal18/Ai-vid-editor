@@ -77,7 +77,7 @@ async def analyze_channel(request: ChannelAnalysisRequest):
         raise HTTPException(status_code=404, detail=f"YouTube channel for handle '{request.handle}' not found")
     
     # Fetch top viral Shorts
-    viral_shorts = youtube_api.get_viral_shorts(channel_info["uploads_playlist_id"], limit=5)
+    viral_shorts = youtube_api.get_viral_shorts(channel_info["uploads_playlist_id"], limit=5, handle=channel_info.get("handle"))
     
     # Analyze the most viral short's transcript for style preset
     style_preset = {

@@ -1494,10 +1494,23 @@ function App() {
                           <h4 style={{ fontSize: '1.1rem', fontWeight: 600, marginBottom: '16px' }}>Top Performing Shorts</h4>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                             {viralShorts.map(video => (
-                              <div key={video.id} style={{
-                                padding: '14px', borderRadius: '12px', backgroundColor: 'var(--bg-secondary)',
-                                border: '1px solid var(--border-light)', display: 'flex', justifyContent: 'space-between', alignItems: 'center'
-                              }}>
+                              <a 
+                                key={video.id} 
+                                href={
+                                  (video.id.startsWith('short_') || video.id.startsWith('s'))
+                                    ? `https://www.youtube.com/results?search_query=${encodeURIComponent(video.title)}`
+                                    : `https://www.youtube.com/shorts/${video.id}`
+                                }
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                style={{
+                                  padding: '14px', borderRadius: '12px', backgroundColor: 'var(--bg-secondary)',
+                                  border: '1px solid var(--border-light)', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                  textDecoration: 'none', color: 'inherit', cursor: 'pointer', transition: 'all 0.2s'
+                                }}
+                                onMouseEnter={(e) => e.currentTarget.style.borderColor = 'var(--accent-cyan)'}
+                                onMouseLeave={(e) => e.currentTarget.style.borderColor = 'var(--border-light)'}
+                              >
                                 <div>
                                   <h5 style={{ fontSize: '0.95rem', fontWeight: 500 }}>{video.title}</h5>
                                   <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Published: {video.published_at}</span>
@@ -1508,7 +1521,7 @@ function App() {
                                   </p>
                                   <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{video.like_count} likes</span>
                                 </div>
-                              </div>
+                              </a>
                             ))}
                           </div>
                         </div>
