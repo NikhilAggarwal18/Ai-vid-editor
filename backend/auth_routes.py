@@ -2,7 +2,7 @@ import os
 import uuid
 import random
 import datetime
-from fastapi import APIRouter, HTTPException, Response, Depends, status
+from fastapi import APIRouter, HTTPException, Response, Depends, status, Cookie
 from pydantic import BaseModel, EmailStr
 from typing import Optional
 
@@ -381,6 +381,37 @@ async def signin_google(payload: GoogleSigninSchema, response: Response):
             )
     finally:
         await client.close()
+
+
+@auth_router.get("/me")
+async def get_me(session_token: Optional[str] = Cookie(None)):
+    """
+    Returns the current logged-in user profile from session cookie.
+    """
+    if not session_token:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+    try:
+        payload = auth_utils.verify_session_token(session_token)
+        user_id = payload.get("sub")
+        client = db.get_client()
+        try:
+            res = await client.execute("SELECT id, email, name, auth_provider FROM users WHERE id = ?", [user_id])
+            if not res.rows:
+                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+            row = res.rows[0]
+            return {
+                "status": "success",
+                "user": {
+                    "id": row[0],
+                    "email": row[1],
+                    "name": row[2],
+                    "auth_provider": row[3]
+                }
+            }
+        finally:
+            await client.close()
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e))
 
 
 @auth_router.post("/logout")
