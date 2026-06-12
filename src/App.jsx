@@ -119,6 +119,45 @@ function App() {
   const [renderedClips, setRenderedClips] = useState([]);
   const [selectedRenderedClips, setSelectedRenderedClips] = useState([]);
 
+  // Time tracking for dynamic captions
+  const [playerTime, setPlayerTime] = useState(0);
+
+  useEffect(() => {
+    setPlayerTime(0);
+    if (!activeClip) return;
+    
+    const duration = (activeClip.end_time - activeClip.start_time) || 30;
+    const interval = setInterval(() => {
+      setPlayerTime((prev) => {
+        const next = prev + 0.25;
+        return next >= duration ? 0 : next;
+      });
+    }, 250);
+    
+    return () => clearInterval(interval);
+  }, [activeClip]);
+
+  const getDynamicCaption = () => {
+    if (!activeClip || !activeClip.transcript) return "VIRAL HIGHLIGHT";
+    const words = activeClip.transcript.split(/\s+/).filter(Boolean);
+    if (words.length === 0) return "VIRAL HIGHLIGHT";
+    
+    // Group into chunks of 3 words
+    const chunkSize = 3;
+    const chunks = [];
+    for (let i = 0; i < words.length; i += chunkSize) {
+      chunks.push(words.slice(i, i + chunkSize).join(" "));
+    }
+    
+    const duration = (activeClip.end_time - activeClip.start_time) || 30;
+    const chunkDuration = duration / chunks.length;
+    
+    const index = Math.floor(playerTime / chunkDuration);
+    const activeChunk = chunks[Math.min(index, chunks.length - 1)] || chunks[0];
+    return activeChunk;
+  };
+
+  // Fetch initial data (music catalog, projects list)
   // Authentication States
   const [currentUser, setCurrentUser] = useState(null);
   const [authMode, setAuthMode] = useState('welcome'); // 'welcome', 'selection', 'email_entry', 'email_verify', 'finalize'
@@ -2220,10 +2259,23 @@ function App() {
                           <h4 style={{ fontSize: '1.1rem', fontWeight: 600, marginBottom: '16px' }}>Top Performing Shorts</h4>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                             {viralShorts.map(video => (
-                              <div key={video.id} style={{
-                                padding: '14px', borderRadius: '12px', backgroundColor: 'var(--bg-secondary)',
-                                border: '1px solid var(--border-light)', display: 'flex', justifyContent: 'space-between', alignItems: 'center'
-                              }}>
+                              <a 
+                                key={video.id} 
+                                href={
+                                  (video.id.startsWith('short_') || video.id.startsWith('s'))
+                                    ? `https://www.youtube.com/results?search_query=${encodeURIComponent(video.title)}`
+                                    : `https://www.youtube.com/shorts/${video.id}`
+                                }
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                style={{
+                                  padding: '14px', borderRadius: '12px', backgroundColor: 'var(--bg-secondary)',
+                                  border: '1px solid var(--border-light)', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                  textDecoration: 'none', color: 'inherit', cursor: 'pointer', transition: 'all 0.2s'
+                                }}
+                                onMouseEnter={(e) => e.currentTarget.style.borderColor = 'var(--accent-cyan)'}
+                                onMouseLeave={(e) => e.currentTarget.style.borderColor = 'var(--border-light)'}
+                              >
                                 <div>
                                   <h5 style={{ fontSize: '0.95rem', fontWeight: 500 }}>{video.title}</h5>
                                   <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Published: {video.published_at}</span>
@@ -2234,7 +2286,7 @@ function App() {
                                   </p>
                                   <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{video.like_count} likes</span>
                                 </div>
-                              </div>
+                              </a>
                             ))}
                           </div>
                         </div>
@@ -2817,7 +2869,7 @@ function App() {
                               boxShadow: '0 0 10px rgba(0,0,0,0.8)',
                               textShadow: '2px 2px 0px #000'
                             }}>
-                              NEON RETENTION HACK
+                              {getDynamicCaption().toUpperCase()}
                             </span>
                           </div>
 
@@ -3098,7 +3150,7 @@ function App() {
                               padding: '4px 10px',
                               borderRadius: '6px'
                             }}>
-                              {activeClip?.transcript ? (activeClip.transcript.length > 50 ? activeClip.transcript.substring(0, 50) + "..." : activeClip.transcript) : "VIRAL HIGHLIGHT"}
+                              {getDynamicCaption().toUpperCase()}
                             </span>
                           </div>
                         </div>
