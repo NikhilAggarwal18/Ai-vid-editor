@@ -155,6 +155,45 @@ function App() {
     checkSession();
   }, []);
 
+  // Initialize Google Sign-in button
+  useEffect(() => {
+    if (authMode === 'selection' && view === 'auth') {
+      const initGoogleBtn = () => {
+        /* global google */
+        if (typeof google !== 'undefined') {
+          try {
+            google.accounts.id.initialize({
+              client_id: "1079750944571-1llr1tqbluu1s04duil36e79fceefq6a.apps.googleusercontent.com",
+              callback: handleGoogleAuthCallback,
+              auto_select: false
+            });
+            
+            const btnEl = document.getElementById("google-signin-button");
+            if (btnEl) {
+              google.accounts.id.renderButton(
+                btnEl,
+                { 
+                  theme: "filled_blue", 
+                  size: "large", 
+                  shape: "rectangular", 
+                  width: 320, 
+                  text: "continue_with" 
+                }
+              );
+            }
+          } catch (err) {
+            console.error("Failed to initialize Google GSI:", err);
+          }
+        } else {
+          // Retry in 200ms if script is not fully loaded
+          setTimeout(initGoogleBtn, 200);
+        }
+      };
+      // Short delay to ensure container DOM element is rendered in page tree
+      setTimeout(initGoogleBtn, 100);
+    }
+  }, [authMode, view]);
+
   // Fetch initial data (music catalog, projects list)
   useEffect(() => {
     if (currentUser || view === 'studio') {
@@ -342,6 +381,41 @@ function App() {
 
   const [showGoogleModal, setShowGoogleModal] = useState(false);
 
+  const sendGoogleTokenToBackend = async (credential) => {
+    setAuthLoading(true);
+    setAuthError("");
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/auth/signin/google`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ credential }),
+        credentials: 'include'
+      });
+      const data = await res.json();
+      if (res.ok && data.status === 'success') {
+        if (data.action === 'login') {
+          setCurrentUser(data.user);
+          setView('studio');
+          showNotification(`Logged in via Google as ${data.user.name}`);
+        } else if (data.action === 'signup_finalize_required') {
+          setAuthEmail(data.email);
+          setAuthName(data.name);
+          setAuthToken(data.token);
+          setAuthPassword('');
+          setAuthConfirmPassword('');
+          setAuthMode('finalize');
+          showNotification("Google account verified! Please set your password.");
+        }
+      } else {
+        setAuthError(data.detail || "Google authentication failed.");
+      }
+    } catch (err) {
+      setAuthError("Could not connect to backend server.");
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
   const triggerGoogleAuthSimulated = async (codeValue) => {
     setShowGoogleModal(false);
     setAuthLoading(true);
@@ -372,6 +446,12 @@ function App() {
       setAuthError("Could not connect to backend server.");
     } finally {
       setAuthLoading(false);
+    }
+  };
+
+  const handleGoogleAuthCallback = (response) => {
+    if (response && response.credential) {
+      sendGoogleTokenToBackend(response.credential);
     }
   };
 
@@ -1511,12 +1591,38 @@ function App() {
           <p className="auth-subtitle">Choose registration method to proceed</p>
           
           <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            {/* Google Identity Services Container */}
+            <div 
+              id="google-signin-button" 
+              style={{ 
+                display: 'flex', 
+                justifyContent: 'center', 
+                minHeight: '44px',
+                width: '100%',
+                margin: '8px 0',
+                borderRadius: '8px',
+                overflow: 'hidden'
+              }}
+            ></div>
+
+            {/* Simulated Google Auth Button for development/fallback */}
             <button 
               className="auth-social-btn"
               onClick={() => setShowGoogleModal(true)}
+              style={{
+                fontSize: '0.85rem',
+                opacity: 0.8,
+                border: '1px dashed var(--border-light)',
+                padding: '8px 12px',
+                height: 'auto',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px'
+              }}
             >
-              <img src="https://www.google.com/favicon.ico" alt="Google" style={{ width: '18px', height: '18px' }} />
-              Continue with Google
+              <img src="https://www.google.com/favicon.ico" alt="Google" style={{ width: '14px', height: '14px', opacity: 0.7 }} />
+              (Dev Tool) Simulate Google Auth
             </button>
             
             <button 

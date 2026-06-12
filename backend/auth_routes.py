@@ -343,24 +343,48 @@ async def google_callback(code: str, response: Response):
 @auth_router.post("/signin/google")
 async def signin_google(payload: GoogleSigninSchema, response: Response):
     """
-    Google OAuth Sign-In handler. Decodes Google credentials (e.g. mock code or credential),
-    resolves user record, and logs in or signals signup required.
+    Google OAuth Sign-In handler. Decodes and verifies the Google ID token,
+    checks if user exists (logs in), or returns signup finalize requirements.
     """
+    google_client_id = os.getenv("GOOGLE_CLIENT_ID") or "1079750944571-1llr1tqbluu1s04duil36e79fceefq6a.apps.googleusercontent.com"
+    
+    email = None
+    name = "Google User"
+    
+    # Try verifying as cryptographic ID Token first
+    if payload.credential and len(payload.credential.split(".")) == 3:
+        try:
+            from google.oauth2 import id_token
+            from google.auth.transport import requests as google_requests
+            
+            idinfo = id_token.verify_oauth2_token(
+                payload.credential,
+                google_requests.Request(),
+                google_client_id
+            )
+            email = idinfo["email"]
+            name = idinfo.get("name", email.split("@")[0].capitalize())
+        except Exception as token_err:
+            print(f"Cryptographic verification failed: {token_err}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid Google credential token"
+            )
+    else:
+        # Fallback to mock email (for local simulator checks)
+        email = payload.credential
+        if not "@" in email:
+            email = "google_user@example.com"
+        name = email.split("@")[0].capitalize()
+
     client = db.get_client()
     try:
-        # In a real environment, we'd verify the token with google-auth:
-        # idinfo = id_token.verify_oauth2_token(payload.credential, requests.Request(), CLIENT_ID)
-        # For this module, we handle it flexibly:
-        mock_email = payload.credential
-        if not "@" in mock_email:
-            mock_email = "google_user@example.com"
-            
         res = await client.execute(
-            "SELECT id, email, name, auth_provider FROM users WHERE email = ?", [mock_email]
+            "SELECT id, email, name, auth_provider FROM users WHERE email = ?", [email]
         )
         if res.rows:
-            user_id, email, name, auth_provider = res.rows[0]
-            session_token = auth_utils.create_session_token(user_id=user_id, email=email)
+            user_id, email_val, name_val, auth_provider = res.rows[0]
+            session_token = auth_utils.create_session_token(user_id=user_id, email=email_val)
             is_prod = os.getenv("ENVIRONMENT") == "production"
             response.set_cookie(
                 key="session_token",
@@ -372,13 +396,24 @@ async def signin_google(payload: GoogleSigninSchema, response: Response):
             )
             return {
                 "status": "success",
-                "user": {"id": user_id, "email": email, "name": name, "auth_provider": auth_provider}
+                "action": "login",
+                "user": {
+                    "id": user_id, 
+                    "email": email_val, 
+                    "name": name_val, 
+                    "auth_provider": auth_provider
+                }
             }
         else:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="No account associated with this Google email. Redirect to Sign-Up."
-            )
+            # User does not exist, return signup token requirement
+            temp_token = auth_utils.create_temporary_token(email=email, name=name)
+            return {
+                "status": "success",
+                "action": "signup_finalize_required",
+                "email": email,
+                "name": name,
+                "token": temp_token
+            }
     finally:
         await client.close()
 
