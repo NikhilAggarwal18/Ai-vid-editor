@@ -322,14 +322,29 @@ async def google_callback(code: str, response: Response):
                 "user": {"id": user_id, "email": email, "name": name, "auth_provider": auth_provider}
             }
         else:
-            # Generate temporary token for finalizing google signup
-            temp_token = auth_utils.create_temporary_token(email=mock_email, name=mock_name)
+            # Auto-register new Google user
+            user_id = str(uuid.uuid4())
+            await client.execute(
+                """INSERT INTO users (id, email, name, password_hash, auth_provider) 
+                   VALUES (?, ?, ?, ?, ?)""",
+                [user_id, mock_email, mock_name, None, "GOOGLE"]
+            )
+            
+            # Generate session JWT
+            session_token = auth_utils.create_session_token(user_id=user_id, email=mock_email)
+            is_prod = os.getenv("ENVIRONMENT") == "production"
+            response.set_cookie(
+                key="session_token",
+                value=session_token,
+                httponly=True,
+                secure=is_prod,
+                samesite="lax",
+                max_age=7 * 24 * 3600
+            )
             return {
                 "status": "success",
-                "action": "signup_finalize_required",
-                "email": mock_email,
-                "name": mock_name,
-                "token": temp_token
+                "action": "login",
+                "user": {"id": user_id, "email": mock_email, "name": mock_name, "auth_provider": "GOOGLE"}
             }
     finally:
         await client.close()
@@ -400,14 +415,34 @@ async def signin_google(payload: GoogleSigninSchema, response: Response):
                 }
             }
         else:
-            # User does not exist, return signup token requirement
-            temp_token = auth_utils.create_temporary_token(email=email, name=name)
+            # Auto-register new Google user
+            user_id = str(uuid.uuid4())
+            await client.execute(
+                """INSERT INTO users (id, email, name, password_hash, auth_provider) 
+                   VALUES (?, ?, ?, ?, ?)""",
+                [user_id, email, name, None, "GOOGLE"]
+            )
+            
+            # Generate session JWT
+            session_token = auth_utils.create_session_token(user_id=user_id, email=email)
+            is_prod = os.getenv("ENVIRONMENT") == "production"
+            response.set_cookie(
+                key="session_token",
+                value=session_token,
+                httponly=True,
+                secure=is_prod,
+                samesite="lax",
+                max_age=7 * 24 * 3600
+            )
             return {
                 "status": "success",
-                "action": "signup_finalize_required",
-                "email": email,
-                "name": name,
-                "token": temp_token
+                "action": "login",
+                "user": {
+                    "id": user_id,
+                    "email": email,
+                    "name": name,
+                    "auth_provider": "GOOGLE"
+                }
             }
     finally:
         await client.close()
