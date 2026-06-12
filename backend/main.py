@@ -2,7 +2,7 @@ import os
 import uuid
 import shutil
 from pathlib import Path
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Depends
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Depends, Cookie
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -12,6 +12,8 @@ import db
 import youtube_api
 import mistral_api
 import video_processor
+import auth_utils
+from auth_routes import auth_router
 
 app = FastAPI(title="ViralShorts AI Studio API")
 
@@ -23,6 +25,40 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(auth_router)
+
+async def get_current_user(session_token: Optional[str] = Cookie(None)):
+    """
+    FastAPI dependency to retrieve the current logged-in user from the session cookie.
+    """
+    if not session_token:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    try:
+        payload = auth_utils.verify_session_token(session_token)
+        user_id = payload.get("sub")
+        
+        client = db.get_client()
+        try:
+            res = await client.execute("SELECT id, email, name, auth_provider FROM users WHERE id = ?", [user_id])
+            if not res.rows:
+                raise HTTPException(status_code=401, detail="User not found")
+            row = res.rows[0]
+            return {
+                "id": row[0],
+                "email": row[1],
+                "name": row[2],
+                "auth_provider": row[3]
+            }
+        finally:
+            await client.close()
+    except ValueError as e:
+        raise HTTPException(status_code=401, detail=str(e))
+
+@app.on_event("startup")
+async def startup_event():
+    print("FastAPI startup: checking and initializing database...")
+    await db.init_db()
 
 # Ensure output directory exists and mount it to serve static files (rendered video files)
 OUTPUT_DIR = Path("./output")

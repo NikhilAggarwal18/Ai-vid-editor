@@ -62,6 +62,29 @@ async def init_db():
     try:
         print("Initializing database tables...")
         async with get_client() as client:
+            # Create users table
+            await client.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    id TEXT PRIMARY KEY,
+                    email TEXT UNIQUE NOT NULL,
+                    name TEXT NOT NULL,
+                    password_hash TEXT,
+                    auth_provider TEXT NOT NULL CHECK(auth_provider IN ('EMAIL', 'GOOGLE')),
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            await client.execute("CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)")
+
+            # Create otp_verifications table
+            await client.execute("""
+                CREATE TABLE IF NOT EXISTS otp_verifications (
+                    email TEXT PRIMARY KEY,
+                    otp_code TEXT NOT NULL,
+                    expires_at DATETIME NOT NULL
+                )
+            """)
+
             # Create channels table
             await client.execute("""
                 CREATE TABLE IF NOT EXISTS channels (
@@ -172,9 +195,6 @@ async def check_on_load():
     global _USE_FALLBACK
     if not await test_turso_connection():
         _USE_FALLBACK = True
-
-# Run check
-asyncio.run(check_on_load())
 
 if __name__ == "__main__":
     asyncio.run(init_db())

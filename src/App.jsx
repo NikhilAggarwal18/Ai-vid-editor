@@ -2,14 +2,15 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   Sparkles, Video, Search, Music, Film, Layers, Play, Pause, 
   RotateCcw, Sliders, ChevronRight, CheckCircle2, AlertCircle, 
-  Settings, User, HelpCircle, Upload, Plus, Volume2, Link, Trash2
+  Settings, User, HelpCircle, Upload, Plus, Volume2, Link, Trash2,
+  Home, Lock, Mail, Eye, EyeOff, Check, X, ShieldAlert, LogOut
 } from 'lucide-react';
-import InteractiveRobot from './components/InteractiveRobot';
+import './App.css';
 
-const BACKEND_URL = 'http://localhost:8000';
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
 
 function App() {
-  const [view, setView] = useState('studio'); // default to studio view dashboard
+  const [view, setView] = useState('landing'); // default to landing page view
   const [studioTab, setStudioTab] = useState('projects'); // default to projects tab
   
   const getFallbackVideoUrl = (start = 0, end = 60) => {
@@ -157,10 +158,51 @@ function App() {
   };
 
   // Fetch initial data (music catalog, projects list)
+  // Authentication States
+  const [currentUser, setCurrentUser] = useState(null);
+  const [authMode, setAuthMode] = useState('welcome'); // 'welcome', 'selection', 'email_entry', 'email_verify', 'finalize'
+  const [authEmail, setAuthEmail] = useState('');
+  const [authOtp, setAuthOtp] = useState('');
+  const [authName, setAuthName] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [authConfirmPassword, setAuthConfirmPassword] = useState('');
+  const [authToken, setAuthToken] = useState('');
+  const [authError, setAuthError] = useState('');
+  const [authLoading, setAuthLoading] = useState(false);
+  const [isSignUp, setIsSignUp] = useState(true); // true = sign up, false = sign in
+  const [showPassword, setShowPassword] = useState(false);
+
+  // Check active session on app mount
   useEffect(() => {
-    fetchMusicCatalog();
-    fetchProjects();
+    const checkSession = async () => {
+      try {
+        const res = await fetch(`${BACKEND_URL}/api/auth/me`, {
+          credentials: 'include'
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.status === 'success' && data.user) {
+            setCurrentUser(data.user);
+            setView('studio'); // Auto-route to studio if already logged in!
+            showNotification(`Welcome back, ${data.user.name}!`);
+          }
+        }
+      } catch (err) {
+        console.warn("No active session detected.");
+      }
+    };
+    checkSession();
   }, []);
+
+  // Google Sign-in initialization is defined below handleGoogleAuthCallback to prevent TDZ errors
+
+  // Fetch initial data (music catalog, projects list)
+  useEffect(() => {
+    if (currentUser || view === 'studio') {
+      fetchMusicCatalog();
+      fetchProjects();
+    }
+  }, [currentUser, view]);
 
   const fetchProjects = async () => {
     try {
@@ -179,6 +221,304 @@ function App() {
   const showNotification = (text, type = 'success') => {
     setMessage({ text, type });
     setTimeout(() => setMessage(null), 5000);
+  };
+
+  // --- PASSWORD STRENGTH CHECKS ---
+  const checkPassLength = (pass) => pass.length >= 8 && pass.length <= 15;
+  const checkPassLower = (pass) => /[a-z]/.test(pass);
+  const checkPassUpper = (pass) => /[A-Z]/.test(pass);
+  const checkPassDigit = (pass) => /\d/.test(pass);
+  const checkPassSpecial = (pass) => /[@$!%*?&]/.test(pass);
+
+  // --- AUTHENTICATION HANDLERS ---
+  const handleEmailInit = async (e) => {
+    if (e) e.preventDefault();
+    if (!authEmail) {
+      setAuthError("Email is required.");
+      return;
+    }
+    setAuthLoading(true);
+    setAuthError("");
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/auth/signup/email/init`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: authEmail }),
+        credentials: 'include'
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setAuthOtp('');
+        setAuthMode('email_verify');
+        showNotification("Verification code sent! Check your email.");
+      } else {
+        setAuthError(data.detail || "Failed to send verification code.");
+      }
+    } catch (err) {
+      setAuthError("Could not connect to backend server.");
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleEmailVerify = async (e) => {
+    e.preventDefault();
+    if (!authOtp) {
+      setAuthError("Verification code is required.");
+      return;
+    }
+    setAuthLoading(true);
+    setAuthError("");
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/auth/signup/email/verify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: authEmail, otp_code: authOtp }),
+        credentials: 'include'
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setAuthToken(data.token);
+        setAuthName('');
+        setAuthPassword('');
+        setAuthConfirmPassword('');
+        setAuthMode('finalize');
+        showNotification("Email verified successfully! Complete your profile.");
+      } else {
+        setAuthError(data.detail || "Invalid or expired verification code.");
+      }
+    } catch (err) {
+      setAuthError("Could not connect to backend server.");
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleFinalize = async (e) => {
+    e.preventDefault();
+    if (!authName || !authPassword) {
+      setAuthError("Name and password are required.");
+      return;
+    }
+    if (authPassword !== authConfirmPassword) {
+      setAuthError("Passwords do not match.");
+      return;
+    }
+    
+    // Front-end password check matching backend regex:
+    const passRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,15}$/;
+    if (!passRegex.test(authPassword)) {
+      setAuthError("Password does not meet validation policy rules.");
+      return;
+    }
+
+    setAuthLoading(true);
+    setAuthError("");
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/auth/signup/finalize`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: authEmail,
+          name: authName,
+          password: authPassword,
+          token: authToken
+        }),
+        credentials: 'include'
+      });
+      const data = await res.json();
+      if (res.ok && data.status === 'success') {
+        setCurrentUser(data.user);
+        setView('studio');
+        showNotification("Account created successfully! Welcome to Studio.");
+        // Reset auth fields
+        setAuthEmail('');
+        setAuthOtp('');
+        setAuthName('');
+        setAuthPassword('');
+        setAuthConfirmPassword('');
+        setAuthToken('');
+      } else {
+        setAuthError(data.detail || "Registration failed.");
+      }
+    } catch (err) {
+      setAuthError("Could not connect to backend server.");
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleEmailSignin = async (e) => {
+    e.preventDefault();
+    if (!authEmail || !authPassword) {
+      setAuthError("Email and password are required.");
+      return;
+    }
+    setAuthLoading(true);
+    setAuthError("");
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/auth/signin/email`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: authEmail, password: authPassword }),
+        credentials: 'include'
+      });
+      const data = await res.json();
+      if (res.ok && data.status === 'success') {
+        setCurrentUser(data.user);
+        setView('studio');
+        showNotification(`Welcome back, ${data.user.name}!`);
+        // Reset fields
+        setAuthEmail('');
+        setAuthPassword('');
+      } else {
+        setAuthError(data.detail || "Invalid email or password.");
+      }
+    } catch (err) {
+      setAuthError("Could not connect to backend server.");
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const [showGoogleModal, setShowGoogleModal] = useState(false);
+
+  const sendGoogleTokenToBackend = async (credential) => {
+    setAuthLoading(true);
+    setAuthError("");
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/auth/signin/google`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ credential }),
+        credentials: 'include'
+      });
+      const data = await res.json();
+      if (res.ok && data.status === 'success') {
+        if (data.action === 'login') {
+          setCurrentUser(data.user);
+          setView('studio');
+          showNotification(`Logged in via Google as ${data.user.name}`);
+        } else if (data.action === 'signup_finalize_required') {
+          setAuthEmail(data.email);
+          setAuthName(data.name);
+          setAuthToken(data.token);
+          setAuthPassword('');
+          setAuthConfirmPassword('');
+          setAuthMode('finalize');
+          showNotification("Google account verified! Please set your password.");
+        }
+      } else {
+        setAuthError(data.detail || "Google authentication failed.");
+      }
+    } catch (err) {
+      setAuthError("Could not connect to backend server.");
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const triggerGoogleAuthSimulated = async (codeValue) => {
+    setShowGoogleModal(false);
+    setAuthLoading(true);
+    setAuthError("");
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/auth/google/callback?code=${encodeURIComponent(codeValue)}`, {
+        credentials: 'include'
+      });
+      const data = await res.json();
+      if (res.ok && data.status === 'success') {
+        if (data.action === 'login') {
+          setCurrentUser(data.user);
+          setView('studio');
+          showNotification(`Logged in via Google as ${data.user.name}`);
+        } else if (data.action === 'signup_finalize_required') {
+          setAuthEmail(data.email);
+          setAuthName(data.name);
+          setAuthToken(data.token);
+          setAuthPassword('');
+          setAuthConfirmPassword('');
+          setAuthMode('finalize');
+          showNotification("Google account verified! Please set your password.");
+        }
+      } else {
+        setAuthError(data.detail || "Google authentication failed.");
+      }
+    } catch (err) {
+      setAuthError("Could not connect to backend server.");
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleGoogleAuthCallback = (response) => {
+    if (response && response.credential) {
+      sendGoogleTokenToBackend(response.credential);
+    }
+  };
+
+  // Initialize Google Sign-in button (placed here to avoid Temporal Dead Zone issues)
+  useEffect(() => {
+    if (authMode === 'selection' && view === 'auth') {
+      let active = true;
+      const initGoogleBtn = () => {
+        if (!active) return;
+        /* global google */
+        if (typeof google !== 'undefined') {
+          const btnEl = document.getElementById("google-signin-button");
+          if (btnEl) {
+            try {
+              google.accounts.id.initialize({
+                client_id: "1079750944571-1llr1tqbluu1s04duil36e79fceefq6a.apps.googleusercontent.com",
+                callback: handleGoogleAuthCallback,
+                auto_select: false
+              });
+              
+              google.accounts.id.renderButton(
+                btnEl,
+                { 
+                  theme: "filled_blue", 
+                  size: "large", 
+                  shape: "rectangular", 
+                  width: 320, 
+                  text: "continue_with" 
+                }
+              );
+            } catch (err) {
+              console.error("Failed to initialize Google GSI:", err);
+            }
+          } else {
+            // Container not rendered in DOM yet, retry in 100ms
+            setTimeout(initGoogleBtn, 100);
+          }
+        } else {
+          // Script not loaded yet, retry in 200ms
+          setTimeout(initGoogleBtn, 200);
+        }
+      };
+      // Short delay to ensure container DOM element is rendered in page tree
+      setTimeout(initGoogleBtn, 100);
+      
+      return () => {
+        active = false;
+      };
+    }
+  }, [authMode, view]);
+
+  const handleLogout = async () => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/auth/logout`, {
+        method: 'POST',
+        credentials: 'include'
+      });
+      if (res.ok) {
+        setCurrentUser(null);
+        setView('landing');
+        showNotification("Logged out successfully.");
+      }
+    } catch (err) {
+      showNotification("Failed to logout.", "error");
+    }
   };
 
   const fetchMusicCatalog = async () => {
@@ -1249,6 +1589,344 @@ function App() {
     }
   };
 
+  const renderAuthCard = () => {
+    const errorAlert = authError && (
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 16px',
+        backgroundColor: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.3)',
+        borderRadius: '8px', color: '#f87171', fontSize: '0.85rem', marginBottom: '20px'
+      }}>
+        <ShieldAlert size={16} style={{ flexShrink: 0 }} />
+        <span>{authError}</span>
+      </div>
+    );
+
+    if (authMode === 'welcome') {
+      return (
+        <div className="glass-panel auth-card">
+          <h2 className="auth-title">Get Started</h2>
+          <p className="auth-subtitle">Join the platform and start creating content powered by AI.</p>
+          
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <button 
+              className="auth-btn auth-btn-primary" 
+              onClick={() => {
+                setIsSignUp(true);
+                setAuthMode('selection');
+                setAuthError('');
+              }}
+            >
+              Sign Up
+            </button>
+            
+            <button 
+              className="auth-btn auth-btn-secondary" 
+              onClick={() => {
+                setIsSignUp(false);
+                setAuthMode('email_entry');
+                setAuthError('');
+              }}
+            >
+              Sign In
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    if (authMode === 'selection') {
+      return (
+        <div className="glass-panel auth-card">
+          <h2 className="auth-title">Create Your Account</h2>
+          <p className="auth-subtitle">Choose registration method to proceed</p>
+          
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            {/* Google Identity Services Container */}
+            <div 
+              id="google-signin-button" 
+              style={{ 
+                display: 'flex', 
+                justifyContent: 'center', 
+                minHeight: '44px',
+                width: '100%',
+                margin: '8px 0',
+                borderRadius: '8px',
+                overflow: 'hidden'
+              }}
+            ></div>
+
+            <button 
+              className="email-matching-btn"
+              onClick={() => {
+                setAuthMode('email_entry');
+                setAuthError('');
+              }}
+            >
+              <div className="email-matching-btn-icon-wrapper">
+                <Mail size={18} color="#1a73e8" />
+              </div>
+              <span className="email-matching-btn-text">Continue with Email</span>
+            </button>
+            
+            <div className="auth-divider">or</div>
+            
+            <button 
+              className="auth-btn auth-btn-secondary" 
+              onClick={() => setAuthMode('welcome')}
+            >
+              Back
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    if (authMode === 'email_entry') {
+      return (
+        <div className="glass-panel auth-card">
+          <h2 className="auth-title">{isSignUp ? "Sign Up with Email" : "Sign In"}</h2>
+          <p className="auth-subtitle">{isSignUp ? "Enter your email to verify account" : "Log in to your Creator Suite"}</p>
+          
+          {errorAlert}
+          
+          <form className="auth-form" onSubmit={isSignUp ? handleEmailInit : handleEmailSignin}>
+            <div className="auth-group">
+              <label className="auth-label">Email Address</label>
+              <div className="auth-input-wrapper">
+                <input 
+                  type="email" 
+                  className="auth-input" 
+                  placeholder="example@email.com" 
+                  value={authEmail}
+                  onChange={(e) => setAuthEmail(e.target.value)}
+                  required 
+                />
+              </div>
+            </div>
+            
+            {!isSignUp && (
+              <div className="auth-group">
+                <label className="auth-label">Password</label>
+                <div className="auth-input-wrapper">
+                  <input 
+                    type={showPassword ? "text" : "password"} 
+                    className="auth-input" 
+                    placeholder="Enter password" 
+                    value={authPassword}
+                    onChange={(e) => setAuthPassword(e.target.value)}
+                    required 
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    style={{
+                      position: 'absolute', right: '12px', background: 'none', border: 'none',
+                      color: 'var(--text-muted)', cursor: 'pointer'
+                    }}
+                  >
+                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+              </div>
+            )}
+            
+            <button type="submit" className="auth-btn auth-btn-primary" disabled={authLoading}>
+              {authLoading ? "Loading..." : isSignUp ? "Send Verification Code" : "Sign In"}
+            </button>
+            
+            <button 
+              type="button" 
+              className="auth-btn auth-btn-secondary" 
+              onClick={() => {
+                setAuthError('');
+                if (isSignUp) {
+                  setAuthMode('selection');
+                } else {
+                  setAuthMode('welcome');
+                }
+              }}
+            >
+              Back
+            </button>
+          </form>
+          
+          {isSignUp ? (
+            <p className="auth-switch-text">
+              Already have an account?{' '}
+              <span className="auth-link" onClick={() => { setIsSignUp(false); setAuthMode('email_entry'); setAuthError(''); setAuthPassword(''); }}>
+                Sign In
+              </span>
+            </p>
+          ) : (
+            <p className="auth-switch-text">
+              New to the application?{' '}
+              <span className="auth-link" onClick={() => { setIsSignUp(true); setAuthMode('selection'); setAuthError(''); }}>
+                Sign Up
+              </span>
+            </p>
+          )}
+        </div>
+      );
+    }
+
+    if (authMode === 'email_verify') {
+      return (
+        <div className="glass-panel auth-card">
+          <h2 className="auth-title">Verify Your Email</h2>
+          <p className="auth-subtitle">A 6-digit verification code has been sent to {authEmail}</p>
+          
+          {errorAlert}
+          
+          <form className="auth-form" onSubmit={handleEmailVerify}>
+            <div className="auth-group">
+              <label className="auth-label">Verification Code</label>
+              <div className="auth-input-wrapper">
+                <input 
+                  type="text" 
+                  className="auth-input" 
+                  placeholder="Enter code" 
+                  maxLength={6}
+                  value={authOtp}
+                  onChange={(e) => setAuthOtp(e.target.value)}
+                  style={{ textAlign: 'center', letterSpacing: '8px', fontSize: '1.25rem', fontFamily: 'var(--font-mono)' }}
+                  required 
+                />
+              </div>
+            </div>
+            
+            <button type="submit" className="auth-btn auth-btn-primary" disabled={authLoading}>
+              {authLoading ? "Verifying..." : "Verify Code"}
+            </button>
+            
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button 
+                type="button" 
+                className="auth-btn auth-btn-secondary" 
+                style={{ flex: 1 }}
+                onClick={() => { setAuthMode('email_entry'); setAuthError(''); }}
+              >
+                Back
+              </button>
+              <button 
+                type="button" 
+                className="auth-btn auth-btn-secondary" 
+                style={{ flex: 1 }}
+                onClick={handleEmailInit}
+                disabled={authLoading}
+              >
+                Resend
+              </button>
+            </div>
+          </form>
+        </div>
+      );
+    }
+
+    if (authMode === 'finalize') {
+      const isLenValid = checkPassLength(authPassword);
+      const isLowerValid = checkPassLower(authPassword);
+      const isUpperValid = checkPassUpper(authPassword);
+      const isDigitValid = checkPassDigit(authPassword);
+      const isSpecialValid = checkPassSpecial(authPassword);
+
+      return (
+        <div className="glass-panel auth-card">
+          <h2 className="auth-title">Tell Us About Yourself</h2>
+          <p className="auth-subtitle">Complete your registration profile details</p>
+          
+          {errorAlert}
+          
+          <form className="auth-form" onSubmit={handleFinalize}>
+            <div className="auth-group">
+              <label className="auth-label">Full Name</label>
+              <div className="auth-input-wrapper">
+                <input 
+                  type="text" 
+                  className="auth-input" 
+                  placeholder="Enter your full name" 
+                  value={authName}
+                  onChange={(e) => setAuthName(e.target.value)}
+                  required 
+                />
+              </div>
+            </div>
+            
+            <div className="auth-group">
+              <label className="auth-label">Create Password</label>
+              <div className="auth-input-wrapper">
+                <input 
+                  type={showPassword ? "text" : "password"} 
+                  className="auth-input" 
+                  placeholder="Choose password" 
+                  value={authPassword}
+                  onChange={(e) => setAuthPassword(e.target.value)}
+                  required 
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  style={{
+                    position: 'absolute', right: '12px', background: 'none', border: 'none',
+                    color: 'var(--text-muted)', cursor: 'pointer'
+                  }}
+                >
+                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
+            </div>
+            
+            <div className="auth-group">
+              <label className="auth-label">Confirm Password</label>
+              <div className="auth-input-wrapper">
+                <input 
+                  type={showPassword ? "text" : "password"} 
+                  className="auth-input" 
+                  placeholder="Re-enter password" 
+                  value={authConfirmPassword}
+                  onChange={(e) => setAuthConfirmPassword(e.target.value)}
+                  required 
+                />
+              </div>
+            </div>
+
+            {/* Password strength validator list */}
+            <div className="password-checker-container">
+              <p className="password-checker-title">Password Requirements:</p>
+              <div className={`password-checker-item ${isLenValid ? 'valid' : ''}`}>
+                {isLenValid ? <CheckCircle2 size={14} /> : <X size={14} />}
+                8 - 15 characters
+              </div>
+              <div className={`password-checker-item ${isLowerValid ? 'valid' : ''}`}>
+                {isLowerValid ? <CheckCircle2 size={14} /> : <X size={14} />}
+                At least 1 lowercase letter
+              </div>
+              <div className={`password-checker-item ${isUpperValid ? 'valid' : ''}`}>
+                {isUpperValid ? <CheckCircle2 size={14} /> : <X size={14} />}
+                At least 1 uppercase letter
+              </div>
+              <div className={`password-checker-item ${isDigitValid ? 'valid' : ''}`}>
+                {isDigitValid ? <CheckCircle2 size={14} /> : <X size={14} />}
+                At least 1 number
+              </div>
+              <div className={`password-checker-item ${isSpecialValid ? 'valid' : ''}`}>
+                {isSpecialValid ? <CheckCircle2 size={14} /> : <X size={14} />}
+                At least 1 special character (@$!%*?&)
+              </div>
+            </div>
+            
+            <button 
+              type="submit" 
+              className="auth-btn auth-btn-primary" 
+              disabled={authLoading || !(isLenValid && isLowerValid && isUpperValid && isDigitValid && isSpecialValid)}
+            >
+              {authLoading ? "Registering..." : "Continue"}
+            </button>
+          </form>
+        </div>
+      );
+    }
+  };
+
   return (
     <div style={{ position: 'relative', minHeight: '100vh', paddingBottom: '60px' }}>
       {/* Toast Notification */}
@@ -1287,11 +1965,77 @@ function App() {
           </div>
           
           <nav style={{ display: 'flex', gap: '30px', alignItems: 'center' }}>
-            <span style={{ color: 'var(--text-secondary)', cursor: 'pointer' }} onClick={() => setView('landing')}>Home</span>
-            <span style={{ color: 'var(--text-secondary)', cursor: 'pointer' }} onClick={() => setView('studio')}>Studio</span>
-            <button className="neon-btn" style={{ padding: '8px 20px', fontSize: '0.85rem' }} onClick={() => setView('studio')}>
-              Launch App
-            </button>
+            <span 
+              style={{ color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', transition: 'color 0.2s' }} 
+              onClick={() => setView('landing')}
+              onMouseEnter={(e) => e.currentTarget.style.color = '#fff'}
+              onMouseLeave={(e) => e.currentTarget.style.color = 'var(--text-secondary)'}
+            >
+              <Home size={16} /> Home
+            </span>
+            <span 
+              style={{ color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', transition: 'color 0.2s' }} 
+              onClick={() => {
+                if (currentUser) {
+                  setView('studio');
+                } else {
+                  setAuthMode('welcome');
+                  setView('auth');
+                }
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.color = '#fff'}
+              onMouseLeave={(e) => e.currentTarget.style.color = 'var(--text-secondary)'}
+            >
+              <Sliders size={16} /> Studio
+            </span>
+            {currentUser ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                <span style={{ color: 'var(--accent-cyan)', fontSize: '0.9rem', fontWeight: 500 }}>
+                  Hi, {currentUser.name}
+                </span>
+                <button 
+                  onClick={handleLogout}
+                  style={{
+                    background: 'none', border: '1px solid var(--border-light)', color: 'var(--text-secondary)',
+                    padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px',
+                    transition: 'var(--transition-smooth)'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = 'var(--accent-magenta)';
+                    e.currentTarget.style.color = '#fff';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = 'var(--border-light)';
+                    e.currentTarget.style.color = 'var(--text-secondary)';
+                  }}
+                >
+                  <LogOut size={14} /> Log Out
+                </button>
+              </div>
+            ) : (
+              <button 
+                onClick={() => {
+                  setIsSignUp(false);
+                  setAuthMode('welcome');
+                  setView('auth');
+                }}
+                style={{
+                  background: 'none', border: '1px solid var(--accent-cyan)', color: 'var(--accent-cyan)',
+                  padding: '6px 16px', borderRadius: '20px', cursor: 'pointer', fontWeight: 500,
+                  boxShadow: '0 0 5px var(--accent-cyan-glow)', transition: 'var(--transition-smooth)'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = 'var(--accent-cyan)';
+                  e.currentTarget.style.color = '#000';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = 'transparent';
+                  e.currentTarget.style.color = 'var(--accent-cyan)';
+                }}
+              >
+                Sign In
+              </button>
+            )}
           </nav>
         </div>
       </header>
@@ -1335,9 +2079,30 @@ function App() {
             </p>
 
             {/* Glowing CTA Button */}
-            <button className="neon-btn" onClick={() => setView('studio')}>
+            <button className="neon-btn" onClick={() => {
+              if (currentUser) {
+                setView('studio');
+              } else {
+                setAuthMode('welcome');
+                setView('auth');
+              }
+            }}>
               Start Creating <ChevronRight size={18} />
             </button>
+          </div>
+        </main>
+      )}
+
+      {/* --- AUTHENTICATION FLOW VIEWS --- */}
+      {view === 'auth' && (
+        <main className="auth-container" style={{ position: 'relative', overflow: 'hidden' }}>
+          {/* Multiple blended neon color glows in background to fill empty space */}
+          <div className="ambient-glow" style={{ top: '10%', left: '20%', width: '450px', height: '450px', background: 'radial-gradient(circle, rgba(0, 255, 255, 0.12) 0%, transparent 70%)' }}></div>
+          <div className="ambient-glow" style={{ bottom: '10%', right: '15%', width: '500px', height: '500px', background: 'radial-gradient(circle, rgba(255, 0, 127, 0.1) 0%, transparent 70%)' }}></div>
+          <div className="ambient-glow" style={{ top: '40%', left: '50%', transform: 'translate(-50%, -50%)', width: '600px', height: '600px', background: 'radial-gradient(circle, rgba(138, 43, 226, 0.12) 0%, transparent 70%)' }}></div>
+          
+          <div style={{ position: 'relative', zIndex: 1, width: '100%', display: 'flex', justifyContent: 'center' }}>
+            {renderAuthCard()}
           </div>
         </main>
       )}
@@ -3368,6 +4133,73 @@ function App() {
               </div>
             )}
 
+          </div>
+        </div>
+      )}
+
+      {/* Google Simulated OAuth Modal */}
+      {showGoogleModal && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 1000,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          backgroundColor: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)'
+        }}>
+          <div className="glass-panel" style={{ width: '100%', maxWidth: '400px', padding: '30px', animation: 'fadeIn 0.3s ease-out' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <img src="https://www.google.com/favicon.ico" alt="Google" style={{ width: '18px', height: '18px' }} />
+                <h4 style={{ fontFamily: 'var(--font-sans)', fontSize: '1.1rem', fontWeight: 600 }}>Sign in with Google</h4>
+              </div>
+              <button onClick={() => setShowGoogleModal(false)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}>
+                <X size={20} />
+              </button>
+            </div>
+            
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: '20px', lineHeight: '1.5' }}>
+              Simulate Google OAuth flow callbacks in the local development environment:
+            </p>
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div 
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '12px', padding: '12px',
+                  backgroundColor: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-light)',
+                  borderRadius: '8px', cursor: 'pointer', transition: 'var(--transition-smooth)'
+                }}
+                onClick={() => triggerGoogleAuthSimulated('rakshitraj1107@gmail.com')}
+                onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.08)'; e.currentTarget.style.borderColor = 'var(--accent-cyan)'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.03)'; e.currentTarget.style.borderColor = 'var(--border-light)'; }}
+              >
+                <div style={{
+                  width: '32px', height: '32px', borderRadius: '50%', backgroundColor: 'var(--accent-purple)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold'
+                }}>R</div>
+                <div style={{ textAlign: 'left' }}>
+                  <p style={{ fontSize: '0.9rem', fontWeight: 500 }}>Rakshit Raj</p>
+                  <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>rakshitraj1107@gmail.com</p>
+                </div>
+              </div>
+
+              <div 
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '12px', padding: '12px',
+                  backgroundColor: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-light)',
+                  borderRadius: '8px', cursor: 'pointer', transition: 'var(--transition-smooth)'
+                }}
+                onClick={() => triggerGoogleAuthSimulated('newuser')}
+                onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.08)'; e.currentTarget.style.borderColor = 'var(--accent-cyan)'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.03)'; e.currentTarget.style.borderColor = 'var(--border-light)'; }}
+              >
+                <div style={{
+                  width: '32px', height: '32px', borderRadius: '50%', backgroundColor: 'var(--accent-magenta)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold'
+                }}>N</div>
+                <div style={{ textAlign: 'left' }}>
+                  <p style={{ fontSize: '0.9rem', fontWeight: 500 }}>Create New Google Account</p>
+                  <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Simulate OAuth signup redirect</p>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}
