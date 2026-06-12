@@ -5,7 +5,6 @@ import {
   Settings, User, HelpCircle, Upload, Plus, Volume2, Link, Trash2,
   Home, Lock, Mail, Eye, EyeOff, Check, X, ShieldAlert, LogOut
 } from 'lucide-react';
-import InteractiveRobot from './components/InteractiveRobot';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
 
@@ -389,29 +388,6 @@ function App() {
     } catch (err) {
       showNotification("Failed to logout.", "error");
     }
-  };
-
-  const getRobotAuthMessage = () => {
-    if (authMode === 'welcome') {
-      return isSignUp
-        ? "Welcome, Creator! 🚀 I'm here to help you get registered and start creating viral AI-powered content. Ready to begin?"
-        : "Welcome back! 🎬 Let's sign you in and jump straight back into the Creator workspace.";
-    }
-    if (authMode === 'selection') {
-      return "How would you like to verify your identity? Google is instant, or we can use email verification.";
-    }
-    if (authMode === 'email_entry') {
-      return isSignUp
-        ? "What email should we register? I'll send a secure verification code to keep your account safe."
-        : "Let's log you in. Type in your registered email and password to access your projects.";
-    }
-    if (authMode === 'email_verify') {
-      return "Check your inbox! 📬 I've sent you a 6-digit verification code. Paste it here to verify your identity.";
-    }
-    if (authMode === 'finalize') {
-      return "Almost there! 🤖 Give yourself a name and set a secure password to finalize your Creator profile.";
-    }
-    return "Let's secure your connection to the AI studio!";
   };
 
   const fetchMusicCatalog = async () => {
@@ -1930,53 +1906,50 @@ function App() {
         <main className="container" style={{ 
           position: 'relative',
           display: 'flex',
+          justifyContent: 'center',
           alignItems: 'center',
           minHeight: 'calc(100vh - 120px)',
-          padding: '40px 0'
+          padding: '20px 0'
         }}>
           <div className="ambient-glow" style={{ top: '15%', left: '35%' }}></div>
           
-          <div className="landing-grid" style={{ zIndex: 1 }}>
-            <div style={{ 
-              display: 'flex', 
-              flexDirection: 'column', 
-              alignItems: 'flex-start', 
-              textAlign: 'left', 
-              maxWidth: '650px'
+          <div style={{ 
+            display: 'flex', 
+            flexDirection: 'column', 
+            alignItems: 'center', 
+            textAlign: 'center', 
+            position: 'relative', 
+            zIndex: 1,
+            maxWidth: '850px'
+          }}>
+            <div style={{
+              display: 'inline-flex', alignItems: 'center', gap: '8px',
+              padding: '6px 16px', borderRadius: '30px', backgroundColor: 'var(--bg-tertiary)',
+              border: '1px solid var(--border-light)', marginBottom: '24px', fontSize: '0.9rem',
+              color: 'var(--accent-cyan)'
             }}>
-              <div style={{
-                display: 'inline-flex', alignItems: 'center', gap: '8px',
-                padding: '6px 16px', borderRadius: '30px', backgroundColor: 'var(--bg-tertiary)',
-                border: '1px solid var(--border-light)', marginBottom: '24px', fontSize: '0.9rem',
-                color: 'var(--accent-cyan)'
-              }}>
-                <Sparkles size={16} /> Powered by Mistral AI & Turso DB
-              </div>
-              
-              <h1 className="gradient-title" style={{ fontSize: '3.8rem', lineHeight: '1.15', marginBottom: '16px', maxWidth: '850px' }}>
-                Transform Long Videos into <span className="neon-text-glow" style={{ color: '#fff' }}>Viral Shorts</span>
-              </h1>
-              
-              <p style={{ color: 'var(--text-secondary)', fontSize: '1.2rem', maxWidth: '600px', marginBottom: '48px', lineHeight: '1.6' }}>
-                Scrape creators, copy their hook templates, auto-cut multi-cam angles, and burn kinetic neon subtitles with copyright-safe beats.
-              </p>
-
-              {/* Glowing CTA Button */}
-              <button className="neon-btn" onClick={() => {
-                if (currentUser) {
-                  setView('studio');
-                } else {
-                  setAuthMode('welcome');
-                  setView('auth');
-                }
-              }}>
-                Start Creating <ChevronRight size={18} />
-              </button>
+              <Sparkles size={16} /> Powered by Mistral AI & Turso DB
             </div>
             
-            <div className="landing-robot-wrapper">
-              <InteractiveRobot />
-            </div>
+            <h1 className="gradient-title" style={{ fontSize: '3.8rem', lineHeight: '1.15', marginBottom: '16px', maxWidth: '850px' }}>
+              Transform Long Videos into <span className="neon-text-glow" style={{ color: '#fff' }}>Viral Shorts</span>
+            </h1>
+            
+            <p style={{ color: 'var(--text-secondary)', fontSize: '1.2rem', maxWidth: '600px', marginBottom: '48px', lineHeight: '1.6' }}>
+              Scrape creators, copy their hook templates, auto-cut multi-cam angles, and burn kinetic neon subtitles with copyright-safe beats.
+            </p>
+
+            {/* Glowing CTA Button */}
+            <button className="neon-btn" onClick={() => {
+              if (currentUser) {
+                setView('studio');
+              } else {
+                setAuthMode('welcome');
+                setView('auth');
+              }
+            }}>
+              Start Creating <ChevronRight size={18} />
+            </button>
           </div>
         </main>
       )}
@@ -1985,20 +1958,7 @@ function App() {
       {view === 'auth' && (
         <main className="auth-container" style={{ position: 'relative' }}>
           <div className="ambient-glow" style={{ top: '25%', left: '50%', transform: 'translate(-50%, -50%)' }}></div>
-          <div className="auth-grid" style={{ zIndex: 1 }}>
-            <div className="auth-robot-col">
-              <div className="auth-bubble">
-                {getRobotAuthMessage()}
-                <div className="auth-bubble-border"></div>
-              </div>
-              <div style={{ width: '100%', maxWidth: '320px', height: '360px' }}>
-                <InteractiveRobot />
-              </div>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'center' }}>
-              {renderAuthCard()}
-            </div>
-          </div>
+          {renderAuthCard()}
         </main>
       )}
 
