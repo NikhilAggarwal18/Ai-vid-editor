@@ -5,6 +5,7 @@ import {
   Settings, User, HelpCircle, Upload, Plus, Volume2, Link, Trash2,
   Home, Lock, Mail, Eye, EyeOff, Check, X, ShieldAlert, LogOut
 } from 'lucide-react';
+import './App.css';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
 
@@ -1472,7 +1473,7 @@ function App() {
 
     if (authMode === 'welcome') {
       return (
-        <div className="auth-card">
+        <div className="glass-panel auth-card">
           <h2 className="auth-title">Get Started</h2>
           <p className="auth-subtitle">Join the platform and start creating content powered by AI.</p>
           
@@ -1505,7 +1506,7 @@ function App() {
 
     if (authMode === 'selection') {
       return (
-        <div className="auth-card">
+        <div className="glass-panel auth-card">
           <h2 className="auth-title">Create Your Account</h2>
           <p className="auth-subtitle">Choose registration method to proceed</p>
           
@@ -1544,7 +1545,7 @@ function App() {
 
     if (authMode === 'email_entry') {
       return (
-        <div className="auth-card">
+        <div className="glass-panel auth-card">
           <h2 className="auth-title">{isSignUp ? "Sign Up with Email" : "Sign In"}</h2>
           <p className="auth-subtitle">{isSignUp ? "Enter your email to verify account" : "Log in to your Creator Suite"}</p>
           
@@ -1632,7 +1633,7 @@ function App() {
 
     if (authMode === 'email_verify') {
       return (
-        <div className="auth-card">
+        <div className="glass-panel auth-card">
           <h2 className="auth-title">Verify Your Email</h2>
           <p className="auth-subtitle">A 6-digit verification code has been sent to {authEmail}</p>
           
@@ -1691,7 +1692,7 @@ function App() {
       const isSpecialValid = checkPassSpecial(authPassword);
 
       return (
-        <div className="auth-card">
+        <div className="glass-panel auth-card">
           <h2 className="auth-title">Tell Us About Yourself</h2>
           <p className="auth-subtitle">Complete your registration profile details</p>
           
@@ -1956,9 +1957,15 @@ function App() {
 
       {/* --- AUTHENTICATION FLOW VIEWS --- */}
       {view === 'auth' && (
-        <main className="auth-container" style={{ position: 'relative' }}>
-          <div className="ambient-glow" style={{ top: '25%', left: '50%', transform: 'translate(-50%, -50%)' }}></div>
-          {renderAuthCard()}
+        <main className="auth-container" style={{ position: 'relative', overflow: 'hidden' }}>
+          {/* Multiple blended neon color glows in background to fill empty space */}
+          <div className="ambient-glow" style={{ top: '10%', left: '20%', width: '450px', height: '450px', background: 'radial-gradient(circle, rgba(0, 255, 255, 0.12) 0%, transparent 70%)' }}></div>
+          <div className="ambient-glow" style={{ bottom: '10%', right: '15%', width: '500px', height: '500px', background: 'radial-gradient(circle, rgba(255, 0, 127, 0.1) 0%, transparent 70%)' }}></div>
+          <div className="ambient-glow" style={{ top: '40%', left: '50%', transform: 'translate(-50%, -50%)', width: '600px', height: '600px', background: 'radial-gradient(circle, rgba(138, 43, 226, 0.12) 0%, transparent 70%)' }}></div>
+          
+          <div style={{ position: 'relative', zIndex: 1, width: '100%', display: 'flex', justifyContent: 'center' }}>
+            {renderAuthCard()}
+          </div>
         </main>
       )}
 
