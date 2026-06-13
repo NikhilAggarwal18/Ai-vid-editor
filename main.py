@@ -2,7 +2,7 @@ import os
 import uuid
 import shutil
 from pathlib import Path
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Depends, Cookie
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -12,9 +12,6 @@ import db
 import youtube_api
 import mistral_api
 import video_processor
-import auth_utils
-from auth_routes import auth_router
-from social_routes import social_router
 
 app = FastAPI(title="ViralShorts AI Studio API")
 
@@ -26,41 +23,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-app.include_router(auth_router)
-app.include_router(social_router)
-
-async def get_current_user(session_token: Optional[str] = Cookie(None)):
-    """
-    FastAPI dependency to retrieve the current logged-in user from the session cookie.
-    """
-    if not session_token:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    try:
-        payload = auth_utils.verify_session_token(session_token)
-        user_id = payload.get("sub")
-        
-        client = db.get_client()
-        try:
-            res = await client.execute("SELECT id, email, name, auth_provider FROM users WHERE id = ?", [user_id])
-            if not res.rows:
-                raise HTTPException(status_code=401, detail="User not found")
-            row = res.rows[0]
-            return {
-                "id": row[0],
-                "email": row[1],
-                "name": row[2],
-                "auth_provider": row[3]
-            }
-        finally:
-            await client.close()
-    except ValueError as e:
-        raise HTTPException(status_code=401, detail=str(e))
-
-@app.on_event("startup")
-async def startup_event():
-    print("FastAPI startup: checking and initializing database...")
-    await db.init_db()
 
 # Ensure output directory exists and mount it to serve static files (rendered video files)
 OUTPUT_DIR = Path("./output")
@@ -886,54 +848,55 @@ async def analyze_vibe(request: VibeAnalysisRequest):
     temp_dir.mkdir(parents=True, exist_ok=True)
 
     try:
-         for idx, short in enumerate(target_shorts):
-             short_url = f"https://www.youtube.com/shorts/{short['id']}"
-             temp_path = temp_dir / f"{short['id']}.mp4"
-             print(f"Downloading short {idx+1}/3: {short_url}")
-             success = youtube_api.download_video(short_url, str(temp_path))
-             
-             # If download fails, fallback to local test_download.mp4 in scratch
-             if not success or not temp_path.exists():
-                 print(f"yt-dlp failed or video unavailable for {short['id']}. Falling back to pre-downloaded test video...")
-                 scratch_file = Path(r"C:\Users\Lenovo\.gemini\antigravity\brain\1b5ec297-5e67-43d5-b1f5-180e843b431c\scratch\test_download.mp4")
-                 if scratch_file.exists():
-                     shutil.copy(scratch_file, temp_path)
-                     success = True
-                 else:
-                     local_test = Path("./backend/test_download.mp4")
-                     if local_test.exists():
-                         shutil.copy(local_test, temp_path)
-                         success = True
+        for idx, short in enumerate(target_shorts):
+            short_url = f"https://www.youtube.com/shorts/{short['id']}"
+            temp_path = temp_dir / f"{short['id']}.mp4"
+            print(f"Downloading short {idx+1}/3: {short_url}")
+            success = youtube_api.download_video(short_url, str(temp_path))
+            
+            # If download fails, fallback to local test_download.mp4 in scratch
+            if not success or not temp_path.exists():
+                print(f"yt-dlp failed or video unavailable for {short['id']}. Falling back to pre-downloaded test video...")
+                scratch_file = Path(r"C:\Users\Lenovo\.gemini\antigravity\brain\1b5ec297-5e67-43d5-b1f5-180e843b431c\scratch\test_download.mp4")
+                if scratch_file.exists():
+                    shutil.copy(scratch_file, temp_path)
+                    success = True
+                else:
+                    # Also try secondary local fallback inside same dir
+                    local_test = Path("./backend/test_download.mp4")
+                    if local_test.exists():
+                        shutil.copy(local_test, temp_path)
+                        success = True
 
-             if success and temp_path.exists():
-                 downloaded_paths.append(str(temp_path))
-             else:
-                 print(f"Failed to download video {short['id']}, trying to continue anyway...")
-         
-         if not downloaded_paths:
-             raise HTTPException(status_code=500, detail="Failed to download any YouTube Short videos for analysis.")
+            if success and temp_path.exists():
+                downloaded_paths.append(str(temp_path))
+            else:
+                print(f"Failed to download video {short['id']}, trying to continue anyway...")
+        
+        if not downloaded_paths:
+            raise HTTPException(status_code=500, detail="Failed to download any YouTube Short videos for analysis.")
 
-         # If we downloaded fewer than target, slice target_shorts to match
-         matched_shorts = target_shorts[:len(downloaded_paths)]
+        # If we downloaded fewer than target, slice target_shorts to match
+        matched_shorts = target_shorts[:len(downloaded_paths)]
 
-         print(f"Starting channel template synthesis for {len(downloaded_paths)} downloaded shorts...")
-         results = video_analyzer.analyze_channel_and_generate_templates(
-             video_paths=downloaded_paths,
-             shorts_details=matched_shorts,
-             user_id="nikhil_test"
-         )
-         return results
+        print(f"Starting channel template synthesis for {len(downloaded_paths)} downloaded shorts...")
+        results = video_analyzer.analyze_channel_and_generate_templates(
+            video_paths=downloaded_paths,
+            shorts_details=matched_shorts,
+            user_id="nikhil_test"
+        )
+        return results
 
     except Exception as err:
-         print(f"Analysis pipeline error details: {err}")
-         raise HTTPException(status_code=500, detail=f"Analysis pipeline error: {err}")
+        print(f"Analysis pipeline error details: {err}")
+        raise HTTPException(status_code=500, detail=f"Analysis pipeline error: {err}")
     finally:
-         for p in downloaded_paths:
-             if os.path.exists(p):
-                 try:
-                     os.remove(p)
-                 except Exception:
-                     pass
+        for p in downloaded_paths:
+            if os.path.exists(p):
+                try:
+                    os.remove(p)
+                except Exception:
+                    pass
 
 if __name__ == "__main__":
     import uvicorn
