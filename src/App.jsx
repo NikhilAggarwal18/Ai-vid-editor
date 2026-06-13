@@ -4,10 +4,11 @@ import {
   RotateCcw, Sliders, ChevronRight, CheckCircle2, AlertCircle, 
   Settings, User, HelpCircle, Upload, Plus, Volume2, Link, Trash2,
   Home, Lock, Mail, Eye, EyeOff, Check, X, ShieldAlert, LogOut,
-  Share2
+  Share2, FolderOpen
 } from 'lucide-react';
 import './App.css';
 import SocialNetworkModule from './components/SocialNetworkModule';
+import BrandLibrary from './components/BrandLibrary';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
 
@@ -2533,6 +2534,14 @@ function App() {
                     </button>
                     
                     <button 
+                      className={`sidebar-link ${studioTab === 'brand_library' ? 'active' : ''}`}
+                      onClick={() => setStudioTab('brand_library')}
+                      style={sidebarLinkStyle(studioTab === 'brand_library')}
+                    >
+                      <FolderOpen size={18} /> Brand Library
+                    </button>
+                    
+                    <button 
                       className={`sidebar-link ${studioTab === 'sync' ? 'active' : ''}`}
                       onClick={() => setStudioTab('sync')}
                       style={sidebarLinkStyle(studioTab === 'sync')}
@@ -2580,6 +2589,27 @@ function App() {
             <section style={{ flexGrow: 1 }}>
               <div className="glass-panel" style={{ padding: '32px', minHeight: '500px', position: 'relative' }}>
                 
+                {/* --- TAB: BRAND LIBRARY --- */}
+                {studioTab === 'brand_library' && (
+                  <BrandLibrary 
+                    backendUrl={BACKEND_URL}
+                    showNotification={showNotification}
+                    onApplyTemplate={(preset) => {
+                      setCaptionFont(preset.font_family);
+                      setCaptionSize(preset.font_size);
+                      setPrimaryColor(preset.primary_color);
+                      setSecondaryColor(preset.secondary_color);
+                      setCaptionPos(preset.caption_position);
+                      
+                      if (activeClip) {
+                        setStudioTab('editor');
+                      } else {
+                        showNotification("Template styling successfully loaded! Choose an AI clip to apply these formats.", "info");
+                      }
+                    }}
+                  />
+                )}
+
                 {/* --- TAB 1: CREATOR INTEL --- */}
                 {studioTab === 'competitor' && (
                   <div>

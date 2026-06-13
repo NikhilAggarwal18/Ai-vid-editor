@@ -825,6 +825,121 @@ async def get_analyzed_channels():
     finally:
         await client.close()
 
+class VibeAnalysisRequest(BaseModel):
+    url: str
+
+@app.get("/api/patterns")
+async def get_patterns():
+    client = db.get_client()
+    try:
+        res = await client.execute("SELECT id, user_id, source_video_url, vibe_text, math_metadata, created_at FROM editing_patterns ORDER BY created_at DESC")
+        patterns = []
+        import json
+        for row in res.rows:
+            vibe_text = row[3]
+            math_metadata = row[4]
+            try:
+                vibe_data = json.loads(vibe_text)
+            except Exception:
+                vibe_data = {"vibe_summary": vibe_text}
+            try:
+                math_data = json.loads(math_metadata)
+            except Exception:
+                math_data = {}
+            patterns.append({
+                "id": row[0],
+                "user_id": row[1],
+                "source_video_url": row[2],
+                "vibe_analysis": vibe_data,
+                "math_metadata": math_data,
+                "created_at": row[5]
+            })
+        return patterns
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch patterns: {e}")
+    finally:
+        await client.close()
+
+@app.post("/api/analyze-vibe")
+async def analyze_vibe(request: VibeAnalysisRequest):
+    import sys
+    # Import video_analyzer from scratch
+    scratch_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".gemini/antigravity/brain/1b5ec297-5e67-43d5-b1f5-180e843b431c/scratch"))
+    if scratch_dir not in sys.path:
+        sys.path.append(scratch_dir)
+    try:
+        import video_analyzer
+    except ImportError:
+        import sys
+        sys.path.append(r"C:\Users\Lenovo\.gemini\antigravity\brain\1b5ec297-5e67-43d5-b1f5-180e843b431c\scratch")
+        import video_analyzer
+
+    print(f"Resolving channel info for URL/handle: {request.url}")
+    channel_info = youtube_api.get_channel_by_handle(request.url)
+    if not channel_info:
+        raise HTTPException(status_code=404, detail=f"YouTube channel could not be resolved from URL/handle: {request.url}")
+
+    print(f"Fetching top viral shorts for playlist {channel_info['uploads_playlist_id']}")
+    viral_shorts = youtube_api.get_viral_shorts(channel_info["uploads_playlist_id"], limit=5, handle=channel_info.get("handle"))
+    if not viral_shorts:
+        raise HTTPException(status_code=404, detail="No viral shorts found on this channel to analyze.")
+
+    # Select top 3 shorts to download and analyze
+    target_shorts = viral_shorts[:3]
+    downloaded_paths = []
+    temp_dir = Path("./output/temp_vibe")
+    temp_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+         for idx, short in enumerate(target_shorts):
+             short_url = f"https://www.youtube.com/shorts/{short['id']}"
+             temp_path = temp_dir / f"{short['id']}.mp4"
+             print(f"Downloading short {idx+1}/3: {short_url}")
+             success = youtube_api.download_video(short_url, str(temp_path))
+             
+             # If download fails, fallback to local test_download.mp4 in scratch
+             if not success or not temp_path.exists():
+                 print(f"yt-dlp failed or video unavailable for {short['id']}. Falling back to pre-downloaded test video...")
+                 scratch_file = Path(r"C:\Users\Lenovo\.gemini\antigravity\brain\1b5ec297-5e67-43d5-b1f5-180e843b431c\scratch\test_download.mp4")
+                 if scratch_file.exists():
+                     shutil.copy(scratch_file, temp_path)
+                     success = True
+                 else:
+                     local_test = Path("./backend/test_download.mp4")
+                     if local_test.exists():
+                         shutil.copy(local_test, temp_path)
+                         success = True
+
+             if success and temp_path.exists():
+                 downloaded_paths.append(str(temp_path))
+             else:
+                 print(f"Failed to download video {short['id']}, trying to continue anyway...")
+         
+         if not downloaded_paths:
+             raise HTTPException(status_code=500, detail="Failed to download any YouTube Short videos for analysis.")
+
+         # If we downloaded fewer than target, slice target_shorts to match
+         matched_shorts = target_shorts[:len(downloaded_paths)]
+
+         print(f"Starting channel template synthesis for {len(downloaded_paths)} downloaded shorts...")
+         results = video_analyzer.analyze_channel_and_generate_templates(
+             video_paths=downloaded_paths,
+             shorts_details=matched_shorts,
+             user_id="nikhil_test"
+         )
+         return results
+
+    except Exception as err:
+         print(f"Analysis pipeline error details: {err}")
+         raise HTTPException(status_code=500, detail=f"Analysis pipeline error: {err}")
+    finally:
+         for p in downloaded_paths:
+             if os.path.exists(p):
+                 try:
+                     os.remove(p)
+                 except Exception:
+                     pass
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)

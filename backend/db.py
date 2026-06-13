@@ -192,6 +192,19 @@ async def init_db():
                 )
             """)
             
+            # Create editing_patterns table
+            await client.execute("""
+                CREATE TABLE IF NOT EXISTS editing_patterns (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT,
+                    source_video_url TEXT,
+                    vibe_text TEXT,
+                    vibe_embedding BLOB,
+                    math_metadata TEXT,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            
             print("Tables created. Seeding sample music tracks...")
             
             # Insert sample music tracks if catalog is empty
