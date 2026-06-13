@@ -30,15 +30,16 @@ def run_db_cleanup():
 def test_password_policy():
     print("Testing password strength validator...")
     
-    # Valid passwords (8-15 characters, 1 upper, 1 lower, 1 digit, 1 special)
+    # Valid passwords (8-25 characters, 1 upper, 1 lower, 1 digit, 1 special)
     assert auth_utils.validate_password_strength("P@ssword123") == True
     assert auth_utils.validate_password_strength("Aa1!bb22") == True
     assert auth_utils.validate_password_strength("S3cur1ty!Code") == True
+    assert auth_utils.validate_password_strength("Password123456789!@%") == True # length 20 (valid)
     
     # Invalid passwords
     assert auth_utils.validate_password_strength("password") == False # no upper, number, special
     assert auth_utils.validate_password_strength("Pass1!") == False # too short
-    assert auth_utils.validate_password_strength("Password123456789!@#") == False # too long
+    assert auth_utils.validate_password_strength("Password123456789!@%extraa") == False # length 26 (too long)
     assert auth_utils.validate_password_strength("PASSWORD123!") == False # no lowercase
     assert auth_utils.validate_password_strength("password123!") == False # no uppercase
     assert auth_utils.validate_password_strength("Password123") == False # no special character
@@ -76,6 +77,12 @@ def test_jwt_generation_and_verification():
     assert decoded_session["email"] == TEST_EMAIL
     assert decoded_session["type"] == "session"
     
+    # Reset Token
+    reset_token = auth_utils.create_password_reset_token(TEST_EMAIL)
+    decoded_reset = auth_utils.verify_password_reset_token(reset_token)
+    assert decoded_reset["email"] == TEST_EMAIL
+    assert decoded_reset["type"] == "password_reset"
+    
     print("✅ JWT token manager tests passed.")
 
 async def fetch_test_otp():
@@ -85,7 +92,7 @@ async def fetch_test_otp():
     db_client = db.get_client()
     try:
         res = await db_client.execute(
-            "SELECT otp_code FROM otp_verifications WHERE email = ?",
+            "SELECT otp_code FROM otp_verifications WHERE email = ? ORDER BY expires_at DESC LIMIT 1",
             [TEST_EMAIL]
         )
         if res.rows:
@@ -124,8 +131,8 @@ def test_api_sign_up_and_sign_in_flow():
             otp_hash = auth_utils.hash_password("123456")
             expires_at = datetime.datetime.utcnow() + datetime.timedelta(minutes=10)
             await db_client.execute(
-                "INSERT OR REPLACE INTO otp_verifications (email, otp_code, expires_at) VALUES (?, ?, ?)",
-                [TEST_EMAIL, otp_hash, expires_at.isoformat()]
+                "INSERT OR REPLACE INTO otp_verifications (id, email, otp_code, expires_at) VALUES (?, ?, ?, ?)",
+                ["test_verify_id", TEST_EMAIL, otp_hash, expires_at.isoformat()]
             )
         finally:
             await db_client.close()
@@ -162,7 +169,7 @@ def test_api_sign_up_and_sign_in_flow():
         "password": TEST_PASSWORD_VALID,
         "token": temp_token
     })
-    assert res.status_code == 200
+    assert res.status_code == 201
     assert res.json()["status"] == "success"
     assert res.json()["user"]["email"] == TEST_EMAIL
     assert "session_token" in res.cookies # secure HttpOnly cookie set!
@@ -189,6 +196,134 @@ def test_api_sign_up_and_sign_in_flow():
     run_db_cleanup()
     print("✅ API Sign-Up & Sign-In integration tests passed.")
 
+def test_api_password_reset_flow():
+    print("Testing password recovery and reset REST API flow...")
+    run_db_cleanup()
+
+    # 1. Sign up a test user first so we can reset their password
+    print("  -> Creating test user...")
+    res = client.post("/api/auth/signup/email/init", json={"email": TEST_EMAIL})
+    assert res.status_code == 200
+    
+    async def insert_known_signup_otp():
+        db_client = db.get_client()
+        try:
+            otp_hash = auth_utils.hash_password("123456")
+            expires_at = datetime.datetime.utcnow() + datetime.timedelta(minutes=10)
+            await db_client.execute(
+                "INSERT OR REPLACE INTO otp_verifications (id, email, otp_code, expires_at) VALUES (?, ?, ?, ?)",
+                ["test_signup_id", TEST_EMAIL, otp_hash, expires_at.isoformat()]
+            )
+        finally:
+            await db_client.close()
+            
+    import datetime
+    asyncio.run(insert_known_signup_otp())
+    
+    res = client.post("/api/auth/signup/email/verify", json={"email": TEST_EMAIL, "otp_code": "123456"})
+    assert res.status_code == 200
+    temp_token = res.json()["token"]
+    
+    # Test finalize with referral_source
+    print("  -> Testing signup/finalize with invalid referral_source...")
+    res = client.post("/api/auth/signup/finalize", json={
+        "email": TEST_EMAIL,
+        "name": TEST_NAME,
+        "password": TEST_PASSWORD_VALID,
+        "token": temp_token,
+        "referral_source": "INVALID"
+    })
+    assert res.status_code == 400
+    
+    print("  -> Testing signup/finalize with valid referral_source...")
+    res = client.post("/api/auth/signup/finalize", json={
+        "email": TEST_EMAIL,
+        "name": TEST_NAME,
+        "password": TEST_PASSWORD_VALID,
+        "token": temp_token,
+        "referral_source": "YOUTUBE"
+    })
+    assert res.status_code == 201
+    
+    # Verify referral_source is stored in DB
+    async def verify_db_referral():
+        db_client = db.get_client()
+        try:
+            res = await db_client.execute("SELECT referral_source FROM users WHERE email = ?", [TEST_EMAIL])
+            return res.rows[0][0]
+        finally:
+            await db_client.close()
+    assert asyncio.run(verify_db_referral()) == "YOUTUBE"
+
+    # 2. Test Forgot Password
+    print("  -> Testing /password/forgot (unregistered email - generic response)...")
+    res = client.post("/api/auth/password/forgot", json={"email": "nonexistent@example.com"})
+    assert res.status_code == 200
+    assert "reset code has been sent" in res.json()["message"]
+
+    print("  -> Testing /password/forgot (registered email)...")
+    res = client.post("/api/auth/password/forgot", json={"email": TEST_EMAIL})
+    assert res.status_code == 200
+    assert "reset code has been sent" in res.json()["message"]
+
+    # 3. Insert known verification code in DB for recovery
+    async def insert_known_reset_otp():
+        db_client = db.get_client()
+        try:
+            otp_hash = auth_utils.hash_password("654321")
+            expires_at = datetime.datetime.utcnow() + datetime.timedelta(minutes=10)
+            await db_client.execute(
+                "INSERT OR REPLACE INTO otp_verifications (id, email, otp_code, expires_at) VALUES (?, ?, ?, ?)",
+                ["test_reset_id", TEST_EMAIL, otp_hash, expires_at.isoformat()]
+            )
+        finally:
+            await db_client.close()
+            
+    asyncio.run(insert_known_reset_otp())
+
+    # 4. Verify OTP
+    print("  -> Testing /password/verify (invalid code)...")
+    res = client.post("/api/auth/password/verify", json={"email": TEST_EMAIL, "otp_code": "000000"})
+    assert res.status_code == 400
+
+    print("  -> Testing /password/verify (valid code)...")
+    res = client.post("/api/auth/password/verify", json={"email": TEST_EMAIL, "otp_code": "654321"})
+    assert res.status_code == 200
+    assert "token" in res.json()
+    reset_token = res.json()["token"]
+
+    # 5. Reset Password
+    NEW_PASSWORD_VALID = "NewSecr3tP@ss2"
+    print("  -> Testing /password/reset (weak password)...")
+    res = client.post("/api/auth/password/reset", json={
+        "email": TEST_EMAIL,
+        "password": "weak",
+        "token": reset_token
+    })
+    assert res.status_code == 400
+
+    print("  -> Testing /password/reset (valid new password)...")
+    res = client.post("/api/auth/password/reset", json={
+        "email": TEST_EMAIL,
+        "password": NEW_PASSWORD_VALID,
+        "token": reset_token
+    })
+    assert res.status_code == 200
+    assert res.json()["status"] == "success"
+
+    # 6. Verify signin with new password
+    print("  -> Testing signin with old password (should fail)...")
+    res = client.post("/api/auth/signin/email", json={"email": TEST_EMAIL, "password": TEST_PASSWORD_VALID})
+    assert res.status_code == 401
+
+    print("  -> Testing signin with new password (should succeed)...")
+    res = client.post("/api/auth/signin/email", json={"email": TEST_EMAIL, "password": NEW_PASSWORD_VALID})
+    assert res.status_code == 200
+    assert res.json()["status"] == "success"
+
+    run_db_cleanup()
+    print("✅ Password reset flow integration tests passed.")
+
 if __name__ == "__main__":
     print("=== STARTING AUTHENTICATION MODULE TESTS ===\n")
     test_password_policy()
@@ -198,4 +333,6 @@ if __name__ == "__main__":
     test_jwt_generation_and_verification()
     print("")
     test_api_sign_up_and_sign_in_flow()
+    print("")
+    test_api_password_reset_flow()
     print("\n=== ALL TESTS PASSED SUCCESSFULLY ===")

@@ -12,9 +12,9 @@ JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "super_secret_key_change_me_in_prod
 JWT_ALGORITHM = "HS256"
 
 # Password Policy Regex
-# 8-15 characters, at least 1 lowercase, 1 uppercase, 1 digit, 1 special character
+# 8-25 characters, at least 1 lowercase, 1 uppercase, 1 digit, 1 special character
 PASSWORD_REGEX = re.compile(
-    r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,15}$"
+    r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,25}$"
 )
 
 def validate_password_strength(password: str) -> bool:
@@ -68,6 +68,33 @@ def verify_temporary_token(token: str) -> dict:
         raise ValueError("Verification token has expired")
     except jwt.InvalidTokenError:
         raise ValueError("Invalid verification token")
+
+def create_password_reset_token(email: str, expires_delta_minutes: int = 15) -> str:
+    """
+    Creates a short-lived temporary token to authorize password reset.
+    """
+    payload = {
+        "email": email,
+        "type": "password_reset",
+        "exp": datetime.datetime.utcnow() + datetime.timedelta(minutes=expires_delta_minutes),
+        "iat": datetime.datetime.utcnow()
+    }
+    return jwt.encode(payload, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
+
+def verify_password_reset_token(token: str) -> dict:
+    """
+    Verifies a password reset token and returns its decoded payload.
+    Raises ValueError on expiration or invalid signature.
+    """
+    try:
+        payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
+        if payload.get("type") != "password_reset":
+            raise ValueError("Invalid token type")
+        return payload
+    except jwt.ExpiredSignatureError:
+        raise ValueError("Reset token has expired")
+    except jwt.InvalidTokenError:
+        raise ValueError("Invalid reset token")
 
 def create_session_token(user_id: str, email: str, expires_delta_days: int = 7) -> str:
     """

@@ -25,6 +25,7 @@ class FinalizeSignupSchema(BaseModel):
     name: str
     password: str
     token: str
+    referral_source: Optional[str] = None
 
 class EmailSigninSchema(BaseModel):
     email: EmailStr
@@ -32,6 +33,18 @@ class EmailSigninSchema(BaseModel):
 
 class GoogleSigninSchema(BaseModel):
     credential: str # Google IdToken / credential code
+
+class PasswordForgotSchema(BaseModel):
+    email: EmailStr
+
+class PasswordVerifySchema(BaseModel):
+    email: EmailStr
+    otp_code: str
+
+class PasswordResetSchema(BaseModel):
+    email: EmailStr
+    password: str
+    token: str
 
 # --- ENDPOINTS ---
 
@@ -56,13 +69,18 @@ async def signup_email_init(payload: EmailInitSchema):
         # Hash OTP (we can hash with bcrypt or a simple hash, let's use bcrypt hashing)
         otp_hash = auth_utils.hash_password(otp_val)
         
-        # Save verification record (using INSERT OR REPLACE since email is PRIMARY KEY)
+        # Save verification record
+        verification_id = str(uuid.uuid4())
         expires_at = datetime.datetime.utcnow() + datetime.timedelta(minutes=10)
         
+        # Delete any old OTP verifications for this email to keep table clean
+        await client.execute("DELETE FROM otp_verifications WHERE email = ?", [payload.email])
+        
+        # Insert new verification
         await client.execute(
-            """INSERT OR REPLACE INTO otp_verifications (email, otp_code, expires_at) 
-               VALUES (?, ?, ?)""",
-            [payload.email, otp_hash, expires_at.isoformat()]
+            """INSERT INTO otp_verifications (id, email, otp_code, expires_at) 
+               VALUES (?, ?, ?, ?)""",
+            [verification_id, payload.email, otp_hash, expires_at.isoformat()]
         )
         
         # Send OTP
@@ -82,7 +100,7 @@ async def signup_email_verify(payload: EmailVerifySchema):
     try:
         # Get latest verification record
         res = await client.execute(
-            "SELECT otp_code, expires_at FROM otp_verifications WHERE email = ?",
+            "SELECT otp_code, expires_at FROM otp_verifications WHERE email = ? ORDER BY expires_at DESC LIMIT 1",
             [payload.email]
         )
         if not res.rows:
@@ -119,7 +137,7 @@ async def signup_email_verify(payload: EmailVerifySchema):
         await client.close()
 
 
-@auth_router.post("/signup/finalize")
+@auth_router.post("/signup/finalize", status_code=status.HTTP_201_CREATED)
 async def signup_finalize(payload: FinalizeSignupSchema, response: Response):
     """
     Finalizes user account registration. Validates the temporary token, verifies password strength,
@@ -143,9 +161,16 @@ async def signup_finalize(payload: FinalizeSignupSchema, response: Response):
     if not auth_utils.validate_password_strength(payload.password):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Password does not meet safety policies (8-15 chars, 1 uppercase, 1 lowercase, 1 number, 1 special character)"
+            detail="Password does not meet safety policies (8-25 chars, 1 uppercase, 1 lowercase, 1 number, 1 special character)"
         )
         
+    # Validate referral source enum if provided
+    if payload.referral_source and payload.referral_source not in ('GOOGLE', 'YOUTUBE', 'FRIEND', 'OTHER'):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid referral_source parameter. Must be one of: GOOGLE, YOUTUBE, FRIEND, OTHER"
+        )
+
     client = db.get_client()
     try:
         # Check if email exists
@@ -161,9 +186,9 @@ async def signup_finalize(payload: FinalizeSignupSchema, response: Response):
         user_id = str(uuid.uuid4())
         
         await client.execute(
-            """INSERT INTO users (id, email, name, password_hash, auth_provider) 
-               VALUES (?, ?, ?, ?, ?)""",
-            [user_id, payload.email, payload.name, pass_hash, "EMAIL"]
+            """INSERT INTO users (id, email, name, password_hash, auth_provider, referral_source) 
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            [user_id, payload.email, payload.name, pass_hash, "EMAIL", payload.referral_source]
         )
         
         # Generate session JWT
@@ -187,9 +212,169 @@ async def signup_finalize(payload: FinalizeSignupSchema, response: Response):
                 "id": user_id,
                 "email": payload.email,
                 "name": payload.name,
-                "auth_provider": "EMAIL"
+                "auth_provider": "EMAIL",
+                "referral_source": payload.referral_source
             }
         }
+    finally:
+        await client.close()
+
+
+@auth_router.post("/password/forgot")
+async def password_forgot(payload: PasswordForgotSchema):
+    """
+    Password Recovery Initiator. Checks if user exists. Generates a 6-digit OTP,
+    hashes it, stores it in the database with 10-minute expiry, and triggers email dispatch.
+    To prevent email enumeration, returns success even if user does not exist.
+    """
+    client = db.get_client()
+    try:
+        # 1. Fetch user (check existence and provider type)
+        res = await client.execute(
+            "SELECT auth_provider FROM users WHERE email = ?",
+            [payload.email]
+        )
+        
+        # Generic response message to prevent email enumeration
+        generic_response = {
+            "status": "success",
+            "message": "If the email is registered, a reset code has been sent."
+        }
+        
+        if not res.rows:
+            # Email not found, return generic success
+            return generic_response
+            
+        auth_provider = res.rows[0][0]
+        if auth_provider != "EMAIL":
+            # If not using EMAIL auth, we don't send reset code, but return generic success
+            return generic_response
+            
+        # 2. Generate 6-digit OTP
+        otp_val = f"{random.randint(100000, 999999)}"
+        # Hash OTP
+        otp_hash = auth_utils.hash_password(otp_val)
+        
+        # Save verification record
+        verification_id = str(uuid.uuid4())
+        expires_at = datetime.datetime.utcnow() + datetime.timedelta(minutes=10)
+        
+        # Delete any old OTP verifications for this email
+        await client.execute("DELETE FROM otp_verifications WHERE email = ?", [payload.email])
+        
+        # Insert new verification
+        await client.execute(
+            """INSERT INTO otp_verifications (id, email, otp_code, expires_at) 
+               VALUES (?, ?, ?, ?)""",
+            [verification_id, payload.email, otp_hash, expires_at.isoformat()]
+        )
+        
+        # Send OTP
+        auth_utils.send_otp_email(payload.email, otp_val)
+        
+        return generic_response
+    finally:
+        await client.close()
+
+
+@auth_router.post("/password/verify")
+async def password_verify(payload: PasswordVerifySchema):
+    """
+    Verifies the password recovery OTP and returns a short-lived temporary token to authorize password resetting.
+    """
+    client = db.get_client()
+    try:
+        # Get latest verification record
+        res = await client.execute(
+            "SELECT otp_code, expires_at FROM otp_verifications WHERE email = ? ORDER BY expires_at DESC LIMIT 1",
+            [payload.email]
+        )
+        if not res.rows:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No verification code has been requested for this email"
+            )
+            
+        stored_hash, expires_str = res.rows[0]
+        
+        # Check expiry
+        expires_at = datetime.datetime.fromisoformat(expires_str)
+        if datetime.datetime.utcnow() > expires_at:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Verification code has expired. Please request a new one"
+            )
+            
+        # Verify code
+        if not auth_utils.verify_password(payload.otp_code, stored_hash):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid verification code"
+            )
+            
+        # Generate temporary reset token (valid for 15 minutes)
+        reset_token = auth_utils.create_password_reset_token(email=payload.email)
+        
+        # Delete OTP record after successful validation
+        await client.execute("DELETE FROM otp_verifications WHERE email = ?", [payload.email])
+        
+        return {"status": "success", "token": reset_token}
+    finally:
+        await client.close()
+
+
+@auth_router.post("/password/reset")
+async def password_reset(payload: PasswordResetSchema):
+    """
+    Resets the user's password. Validates the password reset token, password strength,
+    hashes the password, and updates the database.
+    """
+    # Verify temporary reset token
+    try:
+        token_payload = auth_utils.verify_password_reset_token(payload.token)
+        if token_payload.get("email") != payload.email:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Verification email mismatch"
+            )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+        
+    # Validate password strength
+    if not auth_utils.validate_password_strength(payload.password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password does not meet safety policies (8-25 chars, 1 uppercase, 1 lowercase, 1 number, 1 special character)"
+        )
+        
+    client = db.get_client()
+    try:
+        # Check if email exists
+        res = await client.execute("SELECT id, auth_provider FROM users WHERE email = ?", [payload.email])
+        if not res.rows:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+            
+        user_id, auth_provider = res.rows[0]
+        if auth_provider != "EMAIL":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Password reset is not supported for Google accounts"
+            )
+            
+        # Hash password and update user
+        pass_hash = auth_utils.hash_password(payload.password)
+        await client.execute(
+            "UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            [pass_hash, user_id]
+        )
+        
+        return {"status": "success", "message": "Password has been reset successfully"}
     finally:
         await client.close()
 
@@ -322,29 +507,14 @@ async def google_callback(code: str, response: Response):
                 "user": {"id": user_id, "email": email, "name": name, "auth_provider": auth_provider}
             }
         else:
-            # Auto-register new Google user
-            user_id = str(uuid.uuid4())
-            await client.execute(
-                """INSERT INTO users (id, email, name, password_hash, auth_provider) 
-                   VALUES (?, ?, ?, ?, ?)""",
-                [user_id, mock_email, mock_name, None, "GOOGLE"]
-            )
-            
-            # Generate session JWT
-            session_token = auth_utils.create_session_token(user_id=user_id, email=mock_email)
-            is_prod = os.getenv("ENVIRONMENT") == "production"
-            response.set_cookie(
-                key="session_token",
-                value=session_token,
-                httponly=True,
-                secure=is_prod,
-                samesite="lax",
-                max_age=7 * 24 * 3600
-            )
+            # Generate temporary token for finalizing google signup
+            temp_token = auth_utils.create_temporary_token(email=mock_email, name=mock_name)
             return {
                 "status": "success",
-                "action": "login",
-                "user": {"id": user_id, "email": mock_email, "name": mock_name, "auth_provider": "GOOGLE"}
+                "action": "signup_finalize_required",
+                "email": mock_email,
+                "name": mock_name,
+                "token": temp_token
             }
     finally:
         await client.close()
@@ -415,34 +585,14 @@ async def signin_google(payload: GoogleSigninSchema, response: Response):
                 }
             }
         else:
-            # Auto-register new Google user
-            user_id = str(uuid.uuid4())
-            await client.execute(
-                """INSERT INTO users (id, email, name, password_hash, auth_provider) 
-                   VALUES (?, ?, ?, ?, ?)""",
-                [user_id, email, name, None, "GOOGLE"]
-            )
-            
-            # Generate session JWT
-            session_token = auth_utils.create_session_token(user_id=user_id, email=email)
-            is_prod = os.getenv("ENVIRONMENT") == "production"
-            response.set_cookie(
-                key="session_token",
-                value=session_token,
-                httponly=True,
-                secure=is_prod,
-                samesite="lax",
-                max_age=7 * 24 * 3600
-            )
+            # User does not exist, return signup token requirement
+            temp_token = auth_utils.create_temporary_token(email=email, name=name)
             return {
                 "status": "success",
-                "action": "login",
-                "user": {
-                    "id": user_id,
-                    "email": email,
-                    "name": name,
-                    "auth_provider": "GOOGLE"
-                }
+                "action": "signup_finalize_required",
+                "email": email,
+                "name": name,
+                "token": temp_token
             }
     finally:
         await client.close()

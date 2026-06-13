@@ -3,9 +3,11 @@ import {
   Sparkles, Video, Search, Music, Film, Layers, Play, Pause, 
   RotateCcw, Sliders, ChevronRight, CheckCircle2, AlertCircle, 
   Settings, User, HelpCircle, Upload, Plus, Volume2, Link, Trash2,
-  Home, Lock, Mail, Eye, EyeOff, Check, X, ShieldAlert, LogOut
+  Home, Lock, Mail, Eye, EyeOff, Check, X, ShieldAlert, LogOut,
+  Share2
 } from 'lucide-react';
 import './App.css';
+import SocialNetworkModule from './components/SocialNetworkModule';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
 
@@ -160,7 +162,7 @@ function App() {
   // Fetch initial data (music catalog, projects list)
   // Authentication States
   const [currentUser, setCurrentUser] = useState(null);
-  const [authMode, setAuthMode] = useState('welcome'); // 'welcome', 'selection', 'email_entry', 'email_verify', 'finalize'
+  const [authMode, setAuthMode] = useState('welcome'); // 'welcome', 'selection', 'email_entry', 'email_verify', 'finalize', 'forgot_password', 'reset_verify', 'reset_finalize'
   const [authEmail, setAuthEmail] = useState('');
   const [authOtp, setAuthOtp] = useState('');
   const [authName, setAuthName] = useState('');
@@ -171,6 +173,14 @@ function App() {
   const [authLoading, setAuthLoading] = useState(false);
   const [isSignUp, setIsSignUp] = useState(true); // true = sign up, false = sign in
   const [showPassword, setShowPassword] = useState(false);
+  const [authReferralSource, setAuthReferralSource] = useState('');
+
+  // Password Recovery States
+  const [recoveryEmail, setRecoveryEmail] = useState('');
+  const [recoveryOtp, setRecoveryOtp] = useState('');
+  const [recoveryToken, setRecoveryToken] = useState('');
+  const [recoveryPassword, setRecoveryPassword] = useState('');
+  const [recoveryConfirmPassword, setRecoveryConfirmPassword] = useState('');
 
   // Check active session on app mount
   useEffect(() => {
@@ -192,6 +202,31 @@ function App() {
       }
     };
     checkSession();
+  }, []);
+
+  const [youtubeCallbackStatus, setYoutubeCallbackStatus] = useState(null);
+  const [youtubeCallbackChannelId, setYoutubeCallbackChannelId] = useState(null);
+
+  // Check for YouTube callback redirect params in URL
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const ytStatus = params.get('youtube_status');
+    const channelId = params.get('channel_id');
+    const detail = params.get('detail');
+    
+    if (ytStatus) {
+      if (ytStatus === 'success') {
+        setYoutubeCallbackStatus('success');
+        setYoutubeCallbackChannelId(channelId);
+        setView('social-network');
+        showNotification("YouTube Channel linked successfully!");
+      } else if (ytStatus === 'error') {
+        showNotification(detail || "Failed to link YouTube Channel", "error");
+      }
+      
+      // Clean URL search parameters
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
   }, []);
 
   // Google Sign-in initialization is defined below handleGoogleAuthCallback to prevent TDZ errors
@@ -224,7 +259,7 @@ function App() {
   };
 
   // --- PASSWORD STRENGTH CHECKS ---
-  const checkPassLength = (pass) => pass.length >= 8 && pass.length <= 15;
+  const checkPassLength = (pass) => pass.length >= 8 && pass.length <= 25;
   const checkPassLower = (pass) => /[a-z]/.test(pass);
   const checkPassUpper = (pass) => /[A-Z]/.test(pass);
   const checkPassDigit = (pass) => /\d/.test(pass);
@@ -306,7 +341,7 @@ function App() {
     }
     
     // Front-end password check matching backend regex:
-    const passRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,15}$/;
+    const passRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,25}$/;
     if (!passRegex.test(authPassword)) {
       setAuthError("Password does not meet validation policy rules.");
       return;
@@ -322,7 +357,8 @@ function App() {
           email: authEmail,
           name: authName,
           password: authPassword,
-          token: authToken
+          token: authToken,
+          referral_source: authReferralSource || null
         }),
         credentials: 'include'
       });
@@ -338,8 +374,123 @@ function App() {
         setAuthPassword('');
         setAuthConfirmPassword('');
         setAuthToken('');
+        setAuthReferralSource('');
       } else {
         setAuthError(data.detail || "Registration failed.");
+      }
+    } catch (err) {
+      setAuthError("Could not connect to backend server.");
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleForgotInitiate = async (e) => {
+    if (e) e.preventDefault();
+    if (!recoveryEmail) {
+      setAuthError("Email is required.");
+      return;
+    }
+    setAuthLoading(true);
+    setAuthError("");
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/auth/password/forgot`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: recoveryEmail }),
+        credentials: 'include'
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setRecoveryOtp('');
+        setAuthMode('reset_verify');
+        showNotification("Recovery code sent successfully! Check your email.");
+      } else {
+        setAuthError(data.detail || "Failed to initiate password recovery.");
+      }
+    } catch (err) {
+      setAuthError("Could not connect to backend server.");
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleForgotVerify = async (e) => {
+    e.preventDefault();
+    if (!recoveryOtp) {
+      setAuthError("Verification code is required.");
+      return;
+    }
+    setAuthLoading(true);
+    setAuthError("");
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/auth/password/verify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: recoveryEmail, otp_code: recoveryOtp }),
+        credentials: 'include'
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setRecoveryToken(data.token);
+        setRecoveryPassword('');
+        setRecoveryConfirmPassword('');
+        setAuthMode('reset_finalize');
+        showNotification("Code verified! Set your new password.");
+      } else {
+        setAuthError(data.detail || "Invalid or expired verification code.");
+      }
+    } catch (err) {
+      setAuthError("Could not connect to backend server.");
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleForgotReset = async (e) => {
+    e.preventDefault();
+    if (!recoveryPassword || !recoveryConfirmPassword) {
+      setAuthError("Passwords are required.");
+      return;
+    }
+    if (recoveryPassword !== recoveryConfirmPassword) {
+      setAuthError("Passwords do not match.");
+      return;
+    }
+    
+    // Front-end password check matching backend regex (8-25 characters):
+    const passRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,25}$/;
+    if (!passRegex.test(recoveryPassword)) {
+      setAuthError("Password does not meet validation policy rules.");
+      return;
+    }
+
+    setAuthLoading(true);
+    setAuthError("");
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/auth/password/reset`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: recoveryEmail,
+          password: recoveryPassword,
+          token: recoveryToken
+        }),
+        credentials: 'include'
+      });
+      const data = await res.json();
+      if (res.ok && data.status === 'success') {
+        showNotification("Password has been reset successfully! Please log in.");
+        // Reset recovery fields
+        setRecoveryEmail('');
+        setRecoveryOtp('');
+        setRecoveryToken('');
+        setRecoveryPassword('');
+        setRecoveryConfirmPassword('');
+        setIsSignUp(false);
+        setAuthMode('email_entry');
+      } else {
+        setAuthError(data.detail || "Failed to reset password.");
       }
     } catch (err) {
       setAuthError("Could not connect to backend server.");
@@ -1706,7 +1857,16 @@ function App() {
             
             {!isSignUp && (
               <div className="auth-group">
-                <label className="auth-label">Password</label>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                  <label className="auth-label" style={{ marginBottom: 0 }}>Password</label>
+                  <span 
+                    className="auth-link" 
+                    onClick={() => { setAuthMode('forgot_password'); setRecoveryEmail(authEmail); setAuthError(''); }}
+                    style={{ fontSize: '0.8rem', fontWeight: 500 }}
+                  >
+                    Forgot Password?
+                  </span>
+                </div>
                 <div className="auth-input-wrapper">
                   <input 
                     type={showPassword ? "text" : "password"} 
@@ -1850,6 +2010,24 @@ function App() {
                 />
               </div>
             </div>
+
+            <div className="auth-group">
+              <label className="auth-label">How did you hear about us?</label>
+              <div className="auth-input-wrapper">
+                <select 
+                  className="auth-input" 
+                  value={authReferralSource} 
+                  onChange={(e) => setAuthReferralSource(e.target.value)}
+                  style={{ backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', border: '1px solid var(--border-light)' }}
+                >
+                  <option value="">Select an option</option>
+                  <option value="GOOGLE">Google Search</option>
+                  <option value="YOUTUBE">YouTube Video</option>
+                  <option value="FRIEND">A Friend</option>
+                  <option value="OTHER">Other</option>
+                </select>
+              </div>
+            </div>
             
             <div className="auth-group">
               <label className="auth-label">Create Password</label>
@@ -1894,7 +2072,7 @@ function App() {
               <p className="password-checker-title">Password Requirements:</p>
               <div className={`password-checker-item ${isLenValid ? 'valid' : ''}`}>
                 {isLenValid ? <CheckCircle2 size={14} /> : <X size={14} />}
-                8 - 15 characters
+                8 - 25 characters
               </div>
               <div className={`password-checker-item ${isLowerValid ? 'valid' : ''}`}>
                 {isLowerValid ? <CheckCircle2 size={14} /> : <X size={14} />}
@@ -1920,6 +2098,188 @@ function App() {
               disabled={authLoading || !(isLenValid && isLowerValid && isUpperValid && isDigitValid && isSpecialValid)}
             >
               {authLoading ? "Registering..." : "Continue"}
+            </button>
+          </form>
+        </div>
+      );
+    }
+
+    if (authMode === 'forgot_password') {
+      return (
+        <div className="glass-panel auth-card">
+          <h2 className="auth-title">Reset Password</h2>
+          <p className="auth-subtitle">Enter your email and we'll send a code to reset your password.</p>
+          
+          {errorAlert}
+          
+          <form className="auth-form" onSubmit={handleForgotInitiate}>
+            <div className="auth-group">
+              <label className="auth-label">Email Address</label>
+              <div className="auth-input-wrapper">
+                <input 
+                  type="email" 
+                  className="auth-input" 
+                  placeholder="example@email.com" 
+                  value={recoveryEmail}
+                  onChange={(e) => setRecoveryEmail(e.target.value)}
+                  required 
+                />
+              </div>
+            </div>
+            
+            <button type="submit" className="auth-btn auth-btn-primary" disabled={authLoading}>
+              {authLoading ? "Sending Code..." : "Send Reset Code"}
+            </button>
+            
+            <button 
+              type="button" 
+              className="auth-btn auth-btn-secondary" 
+              onClick={() => { setAuthMode('email_entry'); setAuthError(''); }}
+            >
+              Back
+            </button>
+          </form>
+        </div>
+      );
+    }
+
+    if (authMode === 'reset_verify') {
+      return (
+        <div className="glass-panel auth-card">
+          <h2 className="auth-title">Enter Reset Code</h2>
+          <p className="auth-subtitle">We sent a 6-digit verification code to {recoveryEmail}</p>
+          
+          {errorAlert}
+          
+          <form className="auth-form" onSubmit={handleForgotVerify}>
+            <div className="auth-group">
+              <label className="auth-label">Reset Code</label>
+              <div className="auth-input-wrapper">
+                <input 
+                  type="text" 
+                  className="auth-input" 
+                  placeholder="Enter code" 
+                  maxLength={6}
+                  value={recoveryOtp}
+                  onChange={(e) => setRecoveryOtp(e.target.value)}
+                  style={{ textAlign: 'center', letterSpacing: '8px', fontSize: '1.25rem', fontFamily: 'var(--font-mono)' }}
+                  required 
+                />
+              </div>
+            </div>
+            
+            <button type="submit" className="auth-btn auth-btn-primary" disabled={authLoading}>
+              {authLoading ? "Verifying..." : "Verify Code"}
+            </button>
+            
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button 
+                type="button" 
+                className="auth-btn auth-btn-secondary" 
+                style={{ flex: 1 }}
+                onClick={() => { setAuthMode('forgot_password'); setAuthError(''); }}
+              >
+                Back
+              </button>
+              <button 
+                type="button" 
+                className="auth-btn auth-btn-secondary" 
+                style={{ flex: 1 }}
+                onClick={handleForgotInitiate}
+                disabled={authLoading}
+              >
+                Resend
+              </button>
+            </div>
+          </form>
+        </div>
+      );
+    }
+
+    if (authMode === 'reset_finalize') {
+      const isLenValid = checkPassLength(recoveryPassword);
+      const isLowerValid = checkPassLower(recoveryPassword);
+      const isUpperValid = checkPassUpper(recoveryPassword);
+      const isDigitValid = checkPassDigit(recoveryPassword);
+      const isSpecialValid = checkPassSpecial(recoveryPassword);
+
+      return (
+        <div className="glass-panel auth-card">
+          <h2 className="auth-title">Set New Password</h2>
+          <p className="auth-subtitle">Create a secure new password for your account</p>
+          
+          {errorAlert}
+          
+          <form className="auth-form" onSubmit={handleForgotReset}>
+            <div className="auth-group">
+              <label className="auth-label">New Password</label>
+              <div className="auth-input-wrapper">
+                <input 
+                  type={showPassword ? "text" : "password"} 
+                  className="auth-input" 
+                  placeholder="Choose new password" 
+                  value={recoveryPassword}
+                  onChange={(e) => setRecoveryPassword(e.target.value)}
+                  required 
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  style={{
+                    position: 'absolute', right: '12px', background: 'none', border: 'none',
+                    color: 'var(--text-muted)', cursor: 'pointer'
+                  }}
+                >
+                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
+            </div>
+            
+            <div className="auth-group">
+              <label className="auth-label">Confirm New Password</label>
+              <div className="auth-input-wrapper">
+                <input 
+                  type={showPassword ? "text" : "password"} 
+                  className="auth-input" 
+                  placeholder="Re-enter new password" 
+                  value={recoveryConfirmPassword}
+                  onChange={(e) => setRecoveryConfirmPassword(e.target.value)}
+                  required 
+                />
+              </div>
+            </div>
+
+            {/* Password strength validator list */}
+            <div className="password-checker-container">
+              <p className="password-checker-title">Password Requirements:</p>
+              <div className={`password-checker-item ${isLenValid ? 'valid' : ''}`}>
+                {isLenValid ? <CheckCircle2 size={14} /> : <X size={14} />}
+                8 - 25 characters
+              </div>
+              <div className={`password-checker-item ${isLowerValid ? 'valid' : ''}`}>
+                {isLowerValid ? <CheckCircle2 size={14} /> : <X size={14} />}
+                At least 1 lowercase letter
+              </div>
+              <div className={`password-checker-item ${isUpperValid ? 'valid' : ''}`}>
+                {isUpperValid ? <CheckCircle2 size={14} /> : <X size={14} />}
+                At least 1 uppercase letter
+              </div>
+              <div className={`password-checker-item ${isDigitValid ? 'valid' : ''}`}>
+                {isDigitValid ? <CheckCircle2 size={14} /> : <X size={14} />}
+                At least 1 number
+              </div>
+              <div className={`password-checker-item ${isSpecialValid ? 'valid' : ''}`}>
+                {isSpecialValid ? <CheckCircle2 size={14} /> : <X size={14} />}
+                At least 1 special character (@$!%*?&)
+              </div>
+            </div>
+            
+            <button 
+              type="submit" 
+              className="auth-btn auth-btn-primary" 
+              disabled={authLoading || !(isLenValid && isLowerValid && isUpperValid && isDigitValid && isSpecialValid)}
+            >
+              {authLoading ? "Saving..." : "Reset Password"}
             </button>
           </form>
         </div>
@@ -1988,6 +2348,26 @@ function App() {
             >
               <Sliders size={16} /> Studio
             </span>
+            {currentUser && (
+              <span 
+                style={{ 
+                  color: view === 'social-network' ? '#fff' : 'var(--text-secondary)', 
+                  cursor: 'pointer', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '6px', 
+                  transition: 'color 0.2s' 
+                }} 
+                onClick={() => {
+                  setView('social-network');
+                  setYoutubeCallbackStatus(null);
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.color = '#fff'}
+                onMouseLeave={(e) => e.currentTarget.style.color = view === 'social-network' ? '#fff' : 'var(--text-secondary)'}
+              >
+                <Share2 size={16} /> Social Network
+              </span>
+            )}
             {currentUser ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
                 <span style={{ color: 'var(--accent-cyan)', fontSize: '0.9rem', fontWeight: 500 }}>
@@ -2104,6 +2484,20 @@ function App() {
           <div style={{ position: 'relative', zIndex: 1, width: '100%', display: 'flex', justifyContent: 'center' }}>
             {renderAuthCard()}
           </div>
+        </main>
+      )}
+
+      {/* --- SOCIAL NETWORK VIEW --- */}
+      {view === 'social-network' && (
+        <main className="container" style={{ padding: '40px 0', minHeight: 'calc(100vh - 120px)' }}>
+          <SocialNetworkModule
+            currentUser={currentUser}
+            BACKEND_URL={BACKEND_URL}
+            showNotification={showNotification}
+            setView={setView}
+            initialSubView={youtubeCallbackStatus === 'success' ? 'success-established' : 'landing'}
+            initialChannelId={youtubeCallbackChannelId}
+          />
         </main>
       )}
 

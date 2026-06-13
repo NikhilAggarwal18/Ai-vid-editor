@@ -14,6 +14,7 @@ import mistral_api
 import video_processor
 import auth_utils
 from auth_routes import auth_router
+from social_routes import social_router
 
 app = FastAPI(title="ViralShorts AI Studio API")
 
@@ -27,6 +28,7 @@ app.add_middleware(
 )
 
 app.include_router(auth_router)
+app.include_router(social_router)
 
 async def get_current_user(session_token: Optional[str] = Cookie(None)):
     """

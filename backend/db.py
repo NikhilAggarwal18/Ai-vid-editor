@@ -70,20 +70,48 @@ async def init_db():
                     name TEXT NOT NULL,
                     password_hash TEXT,
                     auth_provider TEXT NOT NULL CHECK(auth_provider IN ('EMAIL', 'GOOGLE')),
+                    referral_source TEXT CHECK(referral_source IN ('GOOGLE', 'YOUTUBE', 'FRIEND', 'OTHER')),
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
             """)
             await client.execute("CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)")
 
+            # Run migration for referral_source column
+            try:
+                await client.execute("ALTER TABLE users ADD COLUMN referral_source TEXT CHECK(referral_source IN ('GOOGLE', 'YOUTUBE', 'FRIEND', 'OTHER'))")
+                print("Successfully added referral_source column to users table.")
+            except Exception:
+                pass
+
             # Create otp_verifications table
             await client.execute("""
                 CREATE TABLE IF NOT EXISTS otp_verifications (
-                    email TEXT PRIMARY KEY,
+                    id TEXT PRIMARY KEY,
+                    email TEXT NOT NULL,
                     otp_code TEXT NOT NULL,
                     expires_at DATETIME NOT NULL
                 )
             """)
+            await client.execute("CREATE INDEX IF NOT EXISTS idx_otp_email ON otp_verifications(email)")
+
+            # Create youtube_creator_profiles table
+            await client.execute("""
+                CREATE TABLE IF NOT EXISTS youtube_creator_profiles (
+                    id TEXT PRIMARY KEY,
+                    user_id TEXT UNIQUE NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    is_established_creator INTEGER NOT NULL CHECK(is_established_creator IN (0, 1)),
+                    youtube_channel_id TEXT,
+                    youtube_refresh_token TEXT,
+                    youtube_access_token TEXT,
+                    expected_audience_age TEXT CHECK(expected_audience_age IN ('BELOW_15', '15_18', '18_22', '22_30', '30_40', '40_PLUS')),
+                    content_genre TEXT,
+                    content_format TEXT CHECK(content_format IN ('LONG_FORM', 'SHORT_FORM', 'BOTH')),
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            await client.execute("CREATE INDEX IF NOT EXISTS idx_youtube_channel_id ON youtube_creator_profiles(youtube_channel_id)")
 
             # Create channels table
             await client.execute("""

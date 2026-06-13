@@ -27,6 +27,7 @@ dist-ssr
 venv/
 backend/venv/
 backend/local.db
+local.db
 backend/output/
 backend/__pycache__/
 backend/.env
